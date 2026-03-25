@@ -1,0 +1,12 @@
+[package]
+name = "cgi"
+version = "0.1.0"
+edition = "2024"
+default-run = "cgi"
+
+[dependencies]
+crossterm = "0.27"
+
+[[bin]]
+name = "cgi_dbg"
+path = "src/bin/dbg_window.rs"
