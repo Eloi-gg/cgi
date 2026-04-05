@@ -1,14 +1,41 @@
-use std::sync::{Arc, Mutex, RwLock};
+use std::{hash::Hash, sync::{Arc, Mutex, RwLock}};
 use crate::cgi::Displayable;
 
+#[derive(Debug)]
 pub struct Widget<T: Displayable + ?Sized> {
     pub displayable: Arc<RwLock<T>>,
     pub dirty: Arc<Mutex<bool>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 pub struct WidgetHdl {
     pub widget: Widget<dyn Displayable>,
+}
+
+impl Clone for WidgetHdl {
+    fn clone(&self) -> Self {
+        WidgetHdl {
+            widget: Widget {
+                displayable: self.widget.displayable.clone(),
+                dirty: self.widget.dirty.clone(),
+            },
+        }
+    }
+}
+
+impl PartialEq for WidgetHdl {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.widget.displayable, &other.widget.displayable)
+    }
+}
+
+impl Eq for WidgetHdl {
+}
+
+impl<T: Displayable + ?Sized + 'static> Hash for Widget<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.displayable).hash(state);
+    }
 }
 
 impl<T: Displayable + 'static> Widget<T> {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::cgi::Displayable;
 use crate::cgi::widget::{Widget, WidgetHdl};
@@ -11,14 +11,13 @@ pub struct Layout {
     layout_data: SpacialTree<LayoutData>,
 }
 
-pub struct ComputedLayout(Vec<(WidgetHdl, LayoutData)>);
+pub struct ComputedLayout(HashMap<WidgetHdl, LayoutData>);
 
 /// Node in a spacial tree, stores keys to its neighbors and its data
 /// The nodes need to be stored in a structure that allows access by K
-/// The data needs to be stored in a structure that allows access by V
 #[derive(Debug, Clone)]
 struct SpacialNode<K, V> {
-    data_ref: V,
+    data: V,
     left: Option<K>,
     right: Option<K>,
     top: Option<K>,
@@ -37,7 +36,7 @@ pub struct PlacementOptions<'a> {
     name: Option<String>,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone)]
 pub enum Coordinate {
     Absolute(i32),
     Relative(f32),
@@ -125,6 +124,30 @@ impl std::ops::Sub for Coordinate {
     }
 }
 
+
+impl PartialEq for Coordinate {
+    fn eq(&self, other: &Self) -> bool {
+        use Coordinate::*;
+
+        match (self, other) {
+            (Absolute(a1), Absolute(a2)) => a1 == a2,
+            (Relative(r1), Relative(r2)) => r1 == r2,
+            (Hybrid(a1, r1), Hybrid(a2, r2)) => a1 == a2 && r1 == r2,
+            (Adaptative, Adaptative) => true,
+            
+            (Absolute(0), Relative(0.0)) | (Relative(0.0), Absolute(0)) => true,
+            (Absolute(0), Hybrid(0, 0.0)) | (Hybrid(0, 0.0), Absolute(0)) => true,
+
+            (Absolute(a), Hybrid(a2, 0.0)) | (Hybrid(a2, 0.0), Absolute(a)) => a == a2,
+            (Relative(r), Hybrid(0, r2)) | (Hybrid(0, r2), Relative(r)) => r == r2,
+
+            (Adaptative, Relative(1.0)) | (Relative(1.0), Adaptative) => true,
+            _ => false,
+        }
+    }
+}
+impl Eq for Coordinate {}
+
 #[derive(Debug)]
 enum LayoutConstraint {
     Left(Coordinate),
@@ -133,7 +156,7 @@ enum LayoutConstraint {
     Below(Coordinate),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct LayoutData {
     tl: (Coordinate, Coordinate),
     width: Coordinate,
@@ -141,9 +164,9 @@ struct LayoutData {
 }
 
 impl<K, V> SpacialNode<K, V> {
-    fn new(data_ref: V) -> Self {
+    fn new(data: V) -> Self {
         Self {
-            data_ref,
+            data,
             left: None,
             right: None,
             top: None,
@@ -156,108 +179,102 @@ impl<K, V> SpacialNode<K, V> {
     }
 }
 
-impl SpacialNode<usize, usize> {
+impl<T> SpacialNode<usize, T> {
+    /// Returns the keys of the neighbors of the node in the following order : left, right, top, bottom. 
     fn next_ordered<'a>(&self, data: &'a mut [usize; 4]) -> &'a [usize] {
         let default = 1000;
-        let mut size = 0;
+        let mut missing_elts = 0;
         data[0] = self.left.unwrap_or_else(|| {
-            size += 1;
+            missing_elts += 1;
             default
         });
         data[1] = self.right.unwrap_or_else(|| {
-            size += 1;
+            missing_elts += 1;
             default
         });
         data[2] = self.top.unwrap_or_else(|| {
-            size += 1;
+            missing_elts += 1;
             default
         });
         data[3] = self.bottom.unwrap_or_else(|| {
-            size += 1;
+            missing_elts += 1;
             default
         });
         data.sort();
 
-        &data[..size]
+        &data[..(4-missing_elts)]
     }
 }
 
 #[derive(Debug)]
-struct SpacialTree<T> {
-    nodes: Vec<SpacialNode<usize, usize>>,
-    data: Vec<T>,
-}
+struct SpacialTree<T> (Vec<SpacialNode<usize, T>>);
 
 impl<T> SpacialTree<T> {
     fn new() -> Self {
-        Self {
-            nodes: Vec::new(),
-            data: Vec::new(),
-        }
+        Self(Vec::new())
     }
 
     fn add_node(&mut self, data: T) -> usize {
-        self.data.push(data);
-        self.nodes.push(SpacialNode::new(self.data.len() - 1));
-        self.data.len() - 1
+        self.0.push(SpacialNode::new(data));
+        self.0.len() - 1
     }
 
     fn last_node_data(&mut self) -> &mut T {
-        self.data.last_mut().unwrap()
+        &mut self.0.last_mut().unwrap().data
     }
 
     fn add_left(&mut self, data: T, node_ref: usize) -> usize {
         let new_node_ref = self.add_node(data);
-        if let Some(node_between) = self.nodes[node_ref].left {
-            self.nodes[new_node_ref].left = Some(node_between);
-            self.nodes[node_between].right = Some(new_node_ref);
+        if let Some(node_between) = self.0[node_ref].left {
+            self.0[new_node_ref].left = Some(node_between);
+            self.0[node_between].right = Some(new_node_ref);
         }
-        self.nodes[node_ref].left = Some(new_node_ref);
-        self.nodes[new_node_ref].right = Some(node_ref);
+        self.0[node_ref].left = Some(new_node_ref);
+        self.0[new_node_ref].right = Some(node_ref);
         new_node_ref
     }
 
     fn add_right(&mut self, data: T, node_ref: usize) -> usize {
         let new_node_ref = self.add_node(data);
-        if let Some(node_between) = self.nodes[node_ref].right {
-            self.nodes[new_node_ref].right = Some(node_between);
-            self.nodes[node_between].left = Some(new_node_ref);
+        if let Some(node_between) = self.0[node_ref].right {
+            self.0[new_node_ref].right = Some(node_between);
+            self.0[node_between].left = Some(new_node_ref);
         }
-        self.nodes[node_ref].right = Some(new_node_ref);
-        self.nodes[new_node_ref].left = Some(node_ref);
+        self.0[node_ref].right = Some(new_node_ref);
+        self.0[new_node_ref].left = Some(node_ref);
         new_node_ref
     }
 
     fn add_above(&mut self, data: T, node_ref: usize) -> usize {
         let new_node_ref = self.add_node(data);
-        if let Some(node_between) = self.nodes[node_ref].top {
-            self.nodes[new_node_ref].top = Some(node_between);
-            self.nodes[node_between].bottom = Some(new_node_ref);
+        if let Some(node_between) = self.0[node_ref].top {
+            self.0[new_node_ref].top = Some(node_between);
+            self.0[node_between].bottom = Some(new_node_ref);
         }
-        self.nodes[node_ref].top = Some(new_node_ref);
-        self.nodes[new_node_ref].bottom = Some(node_ref);
+        self.0[node_ref].top = Some(new_node_ref);
+        self.0[new_node_ref].bottom = Some(node_ref);
         new_node_ref
     }
 
     fn add_below(&mut self, data: T, node_ref: usize) -> usize {
         let new_node_ref = self.add_node(data);
-        if let Some(node_between) = self.nodes[node_ref].bottom {
-            self.nodes[new_node_ref].bottom = Some(node_between);
-            self.nodes[node_between].top = Some(new_node_ref);
+        if let Some(node_between) = self.0[node_ref].bottom {
+            self.0[new_node_ref].bottom = Some(node_between);
+            self.0[node_between].top = Some(new_node_ref);
         }
-        self.nodes[node_ref].bottom = Some(new_node_ref);
-        self.nodes[new_node_ref].top = Some(node_ref);
+        self.0[node_ref].bottom = Some(new_node_ref);
+        self.0[new_node_ref].top = Some(node_ref);
         new_node_ref
     }
 
     fn left_to_right(&self, mut of: usize) -> Vec<usize> {
         let mut result = Vec::new();
 
-        while let Some(node_ref) = self.nodes[of].left {
+        while let Some(node_ref) = self.0[of].left {
             of = node_ref;
         }
         result.push(of);
-        while let Some(node_ref) = self.nodes[of].right {
+        while let Some(node_ref) = self.0[of].right {
             result.push(node_ref);
             of = node_ref;
         }
@@ -267,11 +284,11 @@ impl<T> SpacialTree<T> {
     fn top_to_bottom(&self, mut of: usize) -> Vec<usize> {
         let mut result = Vec::new();
 
-        while let Some(node_ref) = self.nodes[of].top {
+        while let Some(node_ref) = self.0[of].top {
             of = node_ref;
         }
         result.push(of);
-        while let Some(node_ref) = self.nodes[of].bottom {
+        while let Some(node_ref) = self.0[of].bottom {
             result.push(node_ref);
             of = node_ref;
         }
@@ -288,21 +305,31 @@ impl<T> SpacialTree<T> {
         }
         result
     }
-}
 
-impl<T> std::ops::Index<usize> for SpacialTree<T> {
-    type Output = SpacialNode<usize, usize>;
+    fn top_left_node(&self) -> (&SpacialNode<usize, T>, usize) {
+        let mut current = &self.0[0];
+        let mut current_ref = 0;
 
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.nodes[index]
+        loop {
+            if let Some(top) = current.top {
+                current = &self.0[top];
+                current_ref = top;
+            } else if let Some(left) = current.left {
+                current = &self.0[left];
+                current_ref = left;
+            } else {
+                break;
+            }
+        }
+        (&current, current_ref)
     }
 }
 
-impl<T> std::ops::Index<&SpacialNode<usize, usize>> for SpacialTree<T> {
-    type Output = T;
+impl<T> std::ops::Index<usize> for SpacialTree<T> {
+    type Output = SpacialNode<usize, T>;
 
-    fn index(&self, index: &SpacialNode<usize, usize>) -> &Self::Output {
-        &self.data[index.data_ref]
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
     }
 }
 
@@ -354,28 +381,100 @@ impl Layout {
         PlacementOptions::new(self)
     }
 
-    fn compute(&self) -> ComputedLayout {
-        let mut r = Vec::new();
+    fn compute_size_recursive(&mut self, node_ref: usize, computed_layout: &mut HashMap<WidgetHdl, LayoutData>) {
+        use Coordinate::*;
 
-        let node_idx = 0;
-        let node = &self.layout_data[node_idx];
-        if let Coordinate::Adaptative = self.layout_data[node].width {
-            let line = self.layout_data.left_to_right(node_idx);
+        if computed_layout.contains_key(&self.widgets[node_ref]) {
+            return;
+        }
+
+        let node = self.layout_data[node_ref].clone();
+        // Compute width and height for adaptative widgets, then push them to the result vector in the correct order
+        if let Adaptative = node.data.width {
+            let line = self.layout_data.left_to_right(node_ref);
             let adaptative_size = Coordinate::compute_adaptative_sizes(
                 &line
                     .iter()
-                    .map(|e| self.layout_data.data[*e].width)
+                    .map(|e| self.layout_data.0[*e].data.width)
                     .collect::<Vec<_>>(),
             );
 
-            for child in line.iter().map(|e| self.layout_data.data[*e]) {
-                if let Coordinate::Adaptative = child.width {
-                    child.width = adaptative_size;
+            for child_ref in line.iter() {
+                let child_data = &mut self.layout_data.0[*child_ref].data;
+                if let Adaptative = child_data.width {
+                    child_data.width = adaptative_size;
                 }
             }
+
+            self.layout_data.0[node_ref].data.width = adaptative_size;
+        } else if let Adaptative = node.data.height {
+             let column = self.layout_data.top_to_bottom(node_ref);
+            let adaptative_size = Coordinate::compute_adaptative_sizes(
+                &column
+                    .iter()
+                    .map(|e| self.layout_data.0[*e].data.height)
+                    .collect::<Vec<_>>(),
+            );
+
+            for child_ref in column.iter() {
+                let child_data = &mut self.layout_data.0[*child_ref].data;
+                if let Adaptative = child_data.height {
+                    child_data.height = adaptative_size;
+                } 
+            }
+
+            self.layout_data.0[node_ref].data.height = adaptative_size;
+        } 
+
+        computed_layout.insert(self.widgets[node_ref].clone(), self.layout_data.0[node_ref].data.clone());
+
+        for child in node.next_ordered(&mut [0; 4]) {
+            self.compute_size_recursive(*child, computed_layout);
+        } 
+    }
+
+    fn compute_coords_recursive(&self, node_ref: usize, computed_layout: &mut HashMap<WidgetHdl, LayoutData>) {
+        use Coordinate::*;
+
+        let node = &self.layout_data[node_ref];
+        let wref = &self.widgets[node_ref];
+        let node_layout = computed_layout[wref].clone();
+
+        for child_ref in node.next_ordered(&mut [0; 4]) {
+            let child_layout = computed_layout.get_mut(&self.widgets[*child_ref]).unwrap();
+            // TODO: handle offsets
+            if let Adaptative = child_layout.tl.0 {
+                child_layout.tl.0 = node_layout.tl.0 + node_layout.width;
+            }
+            if let Adaptative = child_layout.tl.1 {
+                child_layout.tl.1 = node_layout.tl.1 + node_layout.height;
+            }
+            self.compute_coords_recursive(*child_ref, computed_layout);
+        } 
+    }
+
+    fn compute(mut self) -> ComputedLayout {
+        use Coordinate::*;
+
+        let mut r: HashMap<WidgetHdl, LayoutData> = HashMap::new();
+        let mut starting_points = Vec::new();
+
+        
+        for node_idx in 0..self.layout_data.0.len() {
+            if !r.contains_key(&self.widgets[node_idx]) {
+                starting_points.push(node_idx);
+            }
+            self.compute_size_recursive(node_idx, &mut r);
         }
-        let mut childs = [0; 4];
-        for child in node.next_ordered(&mut childs) {}
+        // The widget on the top left corner gets 0,0 as coordinate if no coordinate are set
+        let top_left_node = self.layout_data.top_left_node().1;
+        if let (Adaptative, Adaptative) = r[&self.widgets[top_left_node]].tl {
+            r.insert(self.widgets[top_left_node].clone(), r[&self.widgets[top_left_node]].clone().with_coords(Absolute(0), Absolute(0)));
+        }
+        
+        for node_idx in starting_points {
+            self.compute_coords_recursive(node_idx, &mut r);
+        }
 
         ComputedLayout(r)
     }
@@ -384,7 +483,7 @@ impl Layout {
 impl<'a> PlacementOptions<'a> {
     fn new(layout: &'a mut Layout) -> Self {
         Self {
-            widget_ref: layout.layout_data.nodes.len(),
+            widget_ref: layout.layout_data.0.len(),
             parent: layout,
             parent_ref: None,
             coords: None,
@@ -454,7 +553,7 @@ impl Drop for PlacementOptions<'_> {
 
         if let Some(placement) = &self.placement {
             // TODO: handle offsets
-            let parent_ref = &self.parent.layout_data.data[self.parent_ref.unwrap()];
+            let parent_ref = &self.parent.layout_data.0[self.parent_ref.unwrap()].data;
             match placement {
                 LayoutConstraint::Left(offset) => {
                     let layout =
@@ -489,7 +588,7 @@ impl Drop for PlacementOptions<'_> {
             // No relative placement specified
             self.parent.layout_data.add_node(LayoutData::empty());
         }
-        let layout_data = &mut self.parent.layout_data.data[self.widget_ref];
+        let layout_data = &mut self.parent.layout_data.0[self.widget_ref].data;
         if let Some(name) = &self.name {
             self.parent.names.insert(name.clone(), self.widget_ref);
         }
@@ -659,7 +758,14 @@ mod tests {
             let w1_layout_data = unsafe { get_widget(&computed_layout, 0) };
             let w2_layout_data = unsafe { get_widget(&computed_layout, 1) };
 
-            println!("{:?} \n {:?}", w1_layout_data, w2_layout_data);
+            assert_eq!(w1_layout_data.unwrap().tl.0, Absolute(0));
+            assert_eq!(w1_layout_data.unwrap().tl.1, Absolute(0));
+            assert_eq!(w1_layout_data.unwrap().width, Relative(1.0));
+            assert_eq!(w1_layout_data.unwrap().height, Relative(0.5));
+            assert_eq!(w2_layout_data.unwrap().tl.0, Absolute(0));
+            assert_eq!(w2_layout_data.unwrap().tl.1, Relative(0.5));
+            assert_eq!(w2_layout_data.unwrap().width, Relative(1.0));
+            assert_eq!(w2_layout_data.unwrap().height, Relative(0.5));            
         }
 
         #[test]
@@ -683,7 +789,10 @@ mod tests {
                 .under_last_widget(Absolute(5))
                 .with_height(Absolute(20));
 
+            assert_eq!(layout.layout_data.top_left_node().1, 0); // The first widget added should be the top left node
+            
             layout.compute();
+
             //
         }
     }
