@@ -640,13 +640,13 @@ impl Drop for PlacementOptions<'_> {
         use Coordinate::*;
 
         if let Some(placement) = &self.placement {
-            // TODO: handle offsets
+            // TODO: now top-left are set relative to neighbor.
             let parent_ref = &self.parent.layout_data.0[self.parent_ref.unwrap()].data;
             match placement {
                 LayoutConstraint::Left(offset) => {
                     let layout = LayoutData::new(
                         Adaptative(0) - *offset,
-                        parent_ref.tl.1.without_adaptative_offset(),
+                        parent_ref.tl.1.without_adaptative_offset(), // -> now y is 0 (bc relative to neighbor)
                         Adaptative(0),
                         parent_ref.height,
                     );
