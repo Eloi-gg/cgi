@@ -41,7 +41,7 @@ pub enum Coordinate {
     Absolute(i32),
     Relative(f32),
     Hybrid(i32, f32),
-    Adaptative,
+    Adaptative(i32),
 }
 
 impl Coordinate {
@@ -50,16 +50,18 @@ impl Coordinate {
             Coordinate::Absolute(a) => *a == 0,
             Coordinate::Relative(r) => *r == 0.0,
             Coordinate::Hybrid(a, r) => *a == 0 && *r == 0.0,
-            Coordinate::Adaptative => false,
+            Coordinate::Adaptative(_) => false,
         }
     }
 
-    fn compute_adaptative_sizes(coords: &[Self]) -> Self {
+    fn compute_adaptative_sizes(coords: &[Self], with_absolute_offset: i32) -> Self {
+        // TODO: with_absolute_offset useless
         let mut space_to_occupy = Self::Hybrid(0, 1.0); // full size
         let mut divider = 0;
         for coord in coords {
-            if let Coordinate::Adaptative = coord {
+            if let Coordinate::Adaptative(offset) = coord {
                 divider += 1;
+                space_to_occupy = space_to_occupy + Self::Absolute(*offset);
             } else {
                 space_to_occupy = space_to_occupy - *coord;
             }
@@ -67,12 +69,53 @@ impl Coordinate {
         if divider == 0 {
             return Self::Hybrid(0, 0.0);
         }
-        let Coordinate::Hybrid(a, r) = space_to_occupy else {
+
+        if let Coordinate::Hybrid(a, r) = space_to_occupy {
+            let relative = r / divider as f32;
+            let absolute = a / divider as i32;
+            return Self::Hybrid(absolute, relative);
+        } else {
             unreachable!()
+        }
+    }
+
+    fn to_hybrid(&self) -> Self {
+        use Coordinate::*;
+
+        match self {
+            Absolute(a) => Hybrid(*a, 0.0),
+            Relative(r) => Hybrid(0, *r),
+            Hybrid(a, r) => Hybrid(*a, *r),
+            Adaptative(o) => Hybrid(*o, 1.0),
+        }
+    }
+
+    fn absolute_part(&self) -> Self {
+        use Coordinate::*;
+
+        let a = match self {
+            Absolute(a) => *a,
+            Relative(_) => 0,
+            Hybrid(a, _) => *a,
+            Adaptative(o) => *o,
         };
-        let relative = r / divider as f32;
-        let absolute = a / divider as i32;
-        return Self::Hybrid(absolute, relative);
+
+        Absolute(a)
+    }
+
+    fn absolute_part_i32(&self) -> i32 {
+        let Self::Absolute(x) = self.absolute_part() else {
+            return 0;
+        };
+        x
+    }
+
+    fn without_adaptative_offset(&self) -> Self {
+        if let Self::Adaptative(_) = self {
+            Self::Adaptative(0)
+        } else {
+            *self
+        }
     }
 }
 
@@ -95,7 +138,10 @@ impl std::ops::Add for Coordinate {
             (Absolute(a), Relative(r)) | (Relative(r), Absolute(a)) => Hybrid(a, r),
             (Absolute(a), Hybrid(b1, b2)) | (Hybrid(b1, b2), Absolute(a)) => Hybrid(a + b1, b2),
             (Relative(a), Hybrid(b1, b2)) | (Hybrid(b1, b2), Relative(a)) => Hybrid(b1, a + b2),
-            (Adaptative, _) | (_, Adaptative) => Adaptative,
+            (Adaptative(o1), Adaptative(o2)) => Adaptative(o1 + o2),
+            (Adaptative(o), Absolute(a)) | (Absolute(a), Adaptative(o)) => Adaptative(o + a),
+            (Adaptative(o), Relative(_)) | (Relative(_), Adaptative(o)) => Adaptative(o),
+            (Adaptative(o), Hybrid(a, _)) | (Hybrid(a, _), Adaptative(o)) => Adaptative(o + a),
         }
     }
 }
@@ -119,29 +165,38 @@ impl std::ops::Sub for Coordinate {
             (Hybrid(a1, r1), Absolute(a2)) => Hybrid(a1 - a2, r1),
             (Relative(r1), Hybrid(a2, r2)) => Hybrid(-a2, r1 - r2),
             (Hybrid(a1, r1), Relative(r2)) => Hybrid(a1, r1 - r2),
-            (Adaptative, _) | (_, Adaptative) => Adaptative,
+            (Adaptative(o1), Adaptative(o2)) => Adaptative(o1 - o2),
+
+            (Adaptative(o), Absolute(a)) => Adaptative(o - a),
+            (Absolute(a), Adaptative(o)) => Adaptative(a - o),
+            (Adaptative(o), Relative(_)) => Adaptative(o),
+            (Relative(_), Adaptative(o)) => Adaptative(o),
+            (Adaptative(o), Hybrid(a, _)) => Adaptative(o - a),
+            (Hybrid(a, _), Adaptative(o)) => Adaptative(a - o),
         }
     }
 }
 
-
 impl PartialEq for Coordinate {
     fn eq(&self, other: &Self) -> bool {
         use Coordinate::*;
-
-        match (self, other) {
+        // Convert to Hybrid for comparison
+        let self_hybrid = self.to_hybrid();
+        let other_hybrid = other.to_hybrid();
+        match (self_hybrid, other_hybrid) {
             (Absolute(a1), Absolute(a2)) => a1 == a2,
             (Relative(r1), Relative(r2)) => r1 == r2,
             (Hybrid(a1, r1), Hybrid(a2, r2)) => a1 == a2 && r1 == r2,
-            (Adaptative, Adaptative) => true,
-            
+            (Adaptative(o1), Adaptative(o2)) => o1 == o2,
+
             (Absolute(0), Relative(0.0)) | (Relative(0.0), Absolute(0)) => true,
             (Absolute(0), Hybrid(0, 0.0)) | (Hybrid(0, 0.0), Absolute(0)) => true,
 
             (Absolute(a), Hybrid(a2, 0.0)) | (Hybrid(a2, 0.0), Absolute(a)) => a == a2,
             (Relative(r), Hybrid(0, r2)) | (Hybrid(0, r2), Relative(r)) => r == r2,
 
-            (Adaptative, Relative(1.0)) | (Relative(1.0), Adaptative) => true,
+            (Adaptative(0), Relative(1.0)) | (Relative(1.0), Adaptative(0)) => true,
+            (Adaptative(o), Hybrid(a, 1.0)) => a == o,
             _ => false,
         }
     }
@@ -180,7 +235,7 @@ impl<K, V> SpacialNode<K, V> {
 }
 
 impl<T> SpacialNode<usize, T> {
-    /// Returns the keys of the neighbors of the node in the following order : left, right, top, bottom. 
+    /// Returns the keys of the neighbors of the node in the following order : left, right, top, bottom.
     fn next_ordered<'a>(&self, data: &'a mut [usize; 4]) -> &'a [usize] {
         let default = 1000;
         let mut missing_elts = 0;
@@ -202,12 +257,12 @@ impl<T> SpacialNode<usize, T> {
         });
         data.sort();
 
-        &data[..(4-missing_elts)]
+        &data[..(4 - missing_elts)]
     }
 }
 
 #[derive(Debug)]
-struct SpacialTree<T> (Vec<SpacialNode<usize, T>>);
+struct SpacialTree<T>(Vec<SpacialNode<usize, T>>);
 
 impl<T> SpacialTree<T> {
     fn new() -> Self {
@@ -306,8 +361,8 @@ impl<T> SpacialTree<T> {
         result
     }
 
-    fn top_left_node(&self) -> (&SpacialNode<usize, T>, usize) {
-        let mut current = &self.0[0];
+    fn top_left_from(&self, idx: usize) -> (&SpacialNode<usize, T>, usize) {
+        let mut current = &self.0[idx];
         let mut current_ref = 0;
 
         loop {
@@ -344,9 +399,9 @@ impl LayoutData {
 
     fn empty() -> Self {
         Self {
-            tl: (Coordinate::Adaptative, Coordinate::Adaptative),
-            width: Coordinate::Adaptative,
-            height: Coordinate::Adaptative,
+            tl: (Coordinate::Adaptative(0), Coordinate::Adaptative(0)),
+            width: Coordinate::Adaptative(0),
+            height: Coordinate::Adaptative(0),
         }
     }
 
@@ -381,7 +436,11 @@ impl Layout {
         PlacementOptions::new(self)
     }
 
-    fn compute_size_recursive(&mut self, node_ref: usize, computed_layout: &mut HashMap<WidgetHdl, LayoutData>) {
+    fn compute_size_recursive(
+        &mut self,
+        node_ref: usize,
+        computed_layout: &mut HashMap<WidgetHdl, LayoutData>,
+    ) {
         use Coordinate::*;
 
         if computed_layout.contains_key(&self.widgets[node_ref]) {
@@ -390,67 +449,91 @@ impl Layout {
 
         let node = self.layout_data[node_ref].clone();
         // Compute width and height for adaptative widgets, then push them to the result vector in the correct order
-        if let Adaptative = node.data.width {
+        if let Adaptative(offset) = node.data.width {
             let line = self.layout_data.left_to_right(node_ref);
+            let last_offset = self.layout_data.0[*line.last().unwrap()].data.tl.0.absolute_part_i32();
             let adaptative_size = Coordinate::compute_adaptative_sizes(
                 &line
                     .iter()
                     .map(|e| self.layout_data.0[*e].data.width)
                     .collect::<Vec<_>>(),
+                -last_offset,
             );
 
             for child_ref in line.iter() {
                 let child_data = &mut self.layout_data.0[*child_ref].data;
-                if let Adaptative = child_data.width {
-                    child_data.width = adaptative_size;
+                if let Adaptative(offset) = child_data.width {
+                    child_data.width = adaptative_size + Absolute(offset);
                 }
             }
 
-            self.layout_data.0[node_ref].data.width = adaptative_size;
-        } else if let Adaptative = node.data.height {
-             let column = self.layout_data.top_to_bottom(node_ref);
+            self.layout_data.0[node_ref].data.width = adaptative_size + Absolute(offset);
+        }
+        if let Adaptative(offset) = node.data.height {
+            let column = self.layout_data.top_to_bottom(node_ref);
+            let last_offset = self.layout_data.0[*column.last().unwrap()].data.tl.1.absolute_part_i32();
             let adaptative_size = Coordinate::compute_adaptative_sizes(
                 &column
                     .iter()
                     .map(|e| self.layout_data.0[*e].data.height)
-                    .collect::<Vec<_>>(),
+                    .collect::<Vec<_>>(), -last_offset
             );
 
             for child_ref in column.iter() {
                 let child_data = &mut self.layout_data.0[*child_ref].data;
-                if let Adaptative = child_data.height {
-                    child_data.height = adaptative_size;
-                } 
+                if let Adaptative(offset) = child_data.height {
+                    child_data.height = adaptative_size + Absolute(offset);
+                }
             }
 
-            self.layout_data.0[node_ref].data.height = adaptative_size;
-        } 
+            self.layout_data.0[node_ref].data.height = adaptative_size + Absolute(offset);
+        }
 
-        computed_layout.insert(self.widgets[node_ref].clone(), self.layout_data.0[node_ref].data.clone());
+        computed_layout.insert(
+            self.widgets[node_ref].clone(),
+            self.layout_data.0[node_ref].data.clone(),
+        );
 
         for child in node.next_ordered(&mut [0; 4]) {
             self.compute_size_recursive(*child, computed_layout);
-        } 
+        }
     }
 
-    fn compute_coords_recursive(&self, node_ref: usize, computed_layout: &mut HashMap<WidgetHdl, LayoutData>) {
+    /// Computes the coordinates of the widgets in the layout. Expected to be called on a top-left node.
+    /// It will not look at upper or left neighbors.
+    fn compute_coords_recursive(
+        &self,
+        node_ref: usize,
+        computed_layout: &mut HashMap<WidgetHdl, LayoutData>,
+    ) {
         use Coordinate::*;
-
+        // TODO : stack overflow here
         let node = &self.layout_data[node_ref];
         let wref = &self.widgets[node_ref];
         let node_layout = computed_layout[wref].clone();
 
-        for child_ref in node.next_ordered(&mut [0; 4]) {
-            let child_layout = computed_layout.get_mut(&self.widgets[*child_ref]).unwrap();
-            // TODO: handle offsets
-            if let Adaptative = child_layout.tl.0 {
-                child_layout.tl.0 = node_layout.tl.0 + node_layout.width;
+        if let Some(child_ref) = node.right {
+            let child_layout = computed_layout.get_mut(&self.widgets[child_ref]).unwrap();
+
+            if let Adaptative(offset) = child_layout.tl.0 {
+                child_layout.tl.0 = node_layout.tl.0 + node_layout.width + Absolute(offset);
             }
-            if let Adaptative = child_layout.tl.1 {
-                child_layout.tl.1 = node_layout.tl.1 + node_layout.height;
+            if let Adaptative(offset) = child_layout.tl.1 {
+                child_layout.tl.1 = node_layout.tl.1 + Absolute(offset);
             }
-            self.compute_coords_recursive(*child_ref, computed_layout);
-        } 
+            self.compute_coords_recursive(child_ref, computed_layout);
+        }
+        if let Some(child_ref) = node.bottom {
+            let child_layout = computed_layout.get_mut(&self.widgets[child_ref]).unwrap();
+
+            if let Adaptative(offset) = child_layout.tl.0 {
+                child_layout.tl.0 = node_layout.tl.0 + Absolute(offset);
+            }
+            if let Adaptative(offset) = child_layout.tl.1 {
+                child_layout.tl.1 = node_layout.tl.1 + node_layout.height + Absolute(offset);
+            }
+            self.compute_coords_recursive(child_ref, computed_layout);
+        }
     }
 
     fn compute(mut self) -> ComputedLayout {
@@ -459,7 +542,6 @@ impl Layout {
         let mut r: HashMap<WidgetHdl, LayoutData> = HashMap::new();
         let mut starting_points = Vec::new();
 
-        
         for node_idx in 0..self.layout_data.0.len() {
             if !r.contains_key(&self.widgets[node_idx]) {
                 starting_points.push(node_idx);
@@ -467,13 +549,19 @@ impl Layout {
             self.compute_size_recursive(node_idx, &mut r);
         }
         // The widget on the top left corner gets 0,0 as coordinate if no coordinate are set
-        let top_left_node = self.layout_data.top_left_node().1;
-        if let (Adaptative, Adaptative) = r[&self.widgets[top_left_node]].tl {
-            r.insert(self.widgets[top_left_node].clone(), r[&self.widgets[top_left_node]].clone().with_coords(Absolute(0), Absolute(0)));
+        let top_left_node = self.layout_data.top_left_from(0).1;
+        if let (Adaptative(offset_x), Adaptative(offset_y)) = r[&self.widgets[top_left_node]].tl {
+            r.insert(
+                self.widgets[top_left_node].clone(),
+                r[&self.widgets[top_left_node]]
+                    .clone()
+                    .with_coords(Absolute(offset_x), Absolute(offset_y)),
+            );
         }
-        
+
         for node_idx in starting_points {
-            self.compute_coords_recursive(node_idx, &mut r);
+            // TODO: compute coords from top left and add stopping point
+            self.compute_coords_recursive(self.layout_data.top_left_from(node_idx).1, &mut r);
         }
 
         ComputedLayout(r)
@@ -556,29 +644,45 @@ impl Drop for PlacementOptions<'_> {
             let parent_ref = &self.parent.layout_data.0[self.parent_ref.unwrap()].data;
             match placement {
                 LayoutConstraint::Left(offset) => {
-                    let layout =
-                        LayoutData::new(Adaptative, parent_ref.tl.1, Adaptative, parent_ref.height);
+                    let layout = LayoutData::new(
+                        Adaptative(0) - *offset,
+                        parent_ref.tl.1.without_adaptative_offset(),
+                        Adaptative(0),
+                        parent_ref.height,
+                    );
                     self.parent
                         .layout_data
                         .add_left(layout, self.parent_ref.unwrap());
                 }
                 LayoutConstraint::Right(offset) => {
-                    let layout =
-                        LayoutData::new(Adaptative, parent_ref.tl.1, Adaptative, parent_ref.height);
+                    let layout = LayoutData::new(
+                        Adaptative(0) + *offset,
+                        parent_ref.tl.1.without_adaptative_offset(),
+                        Adaptative(0),
+                        parent_ref.height,
+                    );
                     self.parent
                         .layout_data
                         .add_right(layout, self.parent_ref.unwrap());
                 }
                 LayoutConstraint::Above(offset) => {
-                    let layout =
-                        LayoutData::new(parent_ref.tl.0, Adaptative, parent_ref.width, Adaptative);
+                    let layout = LayoutData::new(
+                        parent_ref.tl.0.without_adaptative_offset(),
+                        Adaptative(0) - *offset,
+                        parent_ref.width,
+                        Adaptative(0),
+                    );
                     self.parent
                         .layout_data
                         .add_above(layout, self.parent_ref.unwrap());
                 }
                 LayoutConstraint::Below(offset) => {
-                    let layout =
-                        LayoutData::new(parent_ref.tl.0, Adaptative, parent_ref.width, Adaptative);
+                    let layout = LayoutData::new(
+                        parent_ref.tl.0.without_adaptative_offset(),
+                        Adaptative(0) + *offset,
+                        parent_ref.width,
+                        Adaptative(0),
+                    );
                     self.parent
                         .layout_data
                         .add_below(layout, self.parent_ref.unwrap());
@@ -659,8 +763,8 @@ mod tests {
         assert_eq!(Relative(0.2) + Absolute(1), Hybrid(1, 0.2));
         assert_eq!(Hybrid(1, 0.2) + Absolute(5), Hybrid(6, 0.2));
         assert_eq!(Hybrid(1, 0.2) + Relative(0.3), Hybrid(1, 0.5));
-        assert_eq!(Adaptative + Absolute(5), Adaptative);
-        assert_eq!(Relative(0.2) + Adaptative, Adaptative);
+        assert_eq!(Adaptative(0) + Absolute(5), Adaptative(5));
+        assert_eq!(Relative(0.2) + Adaptative(0), Adaptative(0));
     }
 
     mod tree {
@@ -765,7 +869,33 @@ mod tests {
             assert_eq!(w2_layout_data.unwrap().tl.0, Absolute(0));
             assert_eq!(w2_layout_data.unwrap().tl.1, Relative(0.5));
             assert_eq!(w2_layout_data.unwrap().width, Relative(1.0));
-            assert_eq!(w2_layout_data.unwrap().height, Relative(0.5));            
+            assert_eq!(w2_layout_data.unwrap().height, Relative(0.5));
+        }
+
+        #[test]
+        fn left_right() {
+            let mut layout = Layout::new();
+            let mut dg = super::DummyGenerator::new();
+            let widgets = dg.get_n_widgets(2);
+
+            layout.add_widget(&widgets[0]);
+            layout
+                .add_widget(&widgets[1])
+                .right_to_last_widget(Absolute(5));
+
+            let computed_layout = layout.compute();
+            let w1_layout_data = unsafe { get_widget(&computed_layout, 0) };
+            let w2_layout_data = unsafe { get_widget(&computed_layout, 1) };
+
+            assert_eq!(w1_layout_data.unwrap().tl.0, Absolute(0));
+            assert_eq!(w1_layout_data.unwrap().tl.1, Absolute(0));
+            assert_eq!(w1_layout_data.unwrap().width, Relative(0.5));
+            assert_eq!(w1_layout_data.unwrap().height, Relative(1.0));
+
+            assert_eq!(w2_layout_data.unwrap().tl.0, Hybrid(5 / 2, 0.5));
+            assert_eq!(w2_layout_data.unwrap().tl.1, Absolute(0));
+            assert_eq!(w2_layout_data.unwrap().width, Relative(0.5));
+            assert_eq!(w2_layout_data.unwrap().height, Relative(1.0));
         }
 
         #[test]
@@ -789,11 +919,44 @@ mod tests {
                 .under_last_widget(Absolute(5))
                 .with_height(Absolute(20));
 
-            assert_eq!(layout.layout_data.top_left_node().1, 0); // The first widget added should be the top left node
-            
-            layout.compute();
+            assert_eq!(layout.layout_data.top_left_from(0).1, 0); // The first widget added should be the top left node
+
+            let computed_layout = layout.compute();
+
+            let w1_layout_data = unsafe { get_widget(&computed_layout, 0).unwrap() };
+            let w2_layout_data = unsafe { get_widget(&computed_layout, 1).unwrap() };
+            let w3_layout_data = unsafe { get_widget(&computed_layout, 2).unwrap() };
+            let w4_layout_data = unsafe { get_widget(&computed_layout, 3).unwrap() };
+
+            // TODO: write actual assertions
+
+            // First widget
+            assert_eq!(w1_layout_data.tl, (Absolute(5), Absolute(5)));
+            assert_eq!(w1_layout_data.width, Relative(0.3));
+            assert_eq!(w1_layout_data.height, Relative(0.3));
+
+            // Second widget
+            assert_eq!(w2_layout_data.tl, (Hybrid(10, 0.3), Absolute(5)));
+            assert_eq!(w2_layout_data.width, Relative(0.7));
+            assert_eq!(w2_layout_data.height, Relative(0.3));
+
+            // Third widget
+            assert_eq!(w3_layout_data.tl, (Hybrid(10, 0.3), Hybrid(10, 0.3)));
+            assert_eq!(w3_layout_data.width, Relative(1.0));
+            assert_eq!(w3_layout_data.height, Relative(0.7));
+
+            // Fourth widget
+            assert_eq!(w4_layout_data.tl, (Hybrid(10, 0.3), Hybrid(-20, 1.0)));
+            assert_eq!(w4_layout_data.width, Relative(0.7));
+            assert_eq!(w4_layout_data.height, Absolute(20));
 
             //
+        }
+
+        #[test]
+        fn hybrid_sizes() {
+
+            todo!("Here a test where sizes are all given hybrid. Important")
         }
     }
 }

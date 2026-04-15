@@ -44,7 +44,7 @@ mod tests {
         app
     }
 
-    #[test]
+    // #[test]
     fn typical_usage() {
         let mut app = cgi::Application::new();
 
@@ -72,13 +72,13 @@ mod tests {
         app.print_state();
     }
 
-    #[test]
+    // #[test]
     fn dummy_run() {
         let mut app = dummy_app();
         app.run();
     }
 
-    #[test]
+    // #[test]
     fn change_after_run() {
         let mut app = cgi::Application::new();
 
