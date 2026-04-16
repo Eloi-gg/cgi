@@ -384,6 +384,7 @@ impl LayoutBuilder {
             });
 
         out.insert(coords, (total_offset_x, total_offset_y));
+        
         if let Some(child_ref) = node.right {
             self.compute_offsets_recursive(child_ref, (coords.0 + 1, coords.1), out);
         }

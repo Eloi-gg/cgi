@@ -8,10 +8,6 @@ pub enum Coordinate {
     Adaptative(i32),
 }
 
-pub(crate) struct ComputedCoordinate {
-    x: i32
-}
-
 impl Coordinate {
     pub fn is_null(&self) -> bool {
         match self {
