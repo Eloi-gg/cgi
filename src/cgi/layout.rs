@@ -1,17 +1,18 @@
+use crate::cgi::Displayable;
+use crate::cgi::coordinate::Coordinate;
+use crate::cgi::widget::{Widget, WidgetHdl};
 use std::collections::{HashMap, HashSet};
 
-use crate::cgi::Displayable;
-use crate::cgi::widget::{Widget, WidgetHdl};
-
 #[derive(Debug)]
-pub struct Layout {
+pub struct LayoutBuilder {
     pub(crate) widgets: Vec<WidgetHdl>,
     last_widget: usize,
     names: HashMap<String, usize>,
-    layout_data: SpacialTree<LayoutData>,
+    layout_data: SpacialTree<WidgetPlacement>,
 }
 
-pub struct ComputedLayout(HashMap<WidgetHdl, LayoutData>);
+pub struct Layout(HashMap<WidgetHdl, WidgetPlacement>);
+pub(crate) struct ComputedLayout(HashMap<WidgetHdl, ComputedWidgetPlacement>);
 
 /// Node in a spacial tree, stores keys to its neighbors and its data
 /// The nodes need to be stored in a structure that allows access by K
@@ -26,7 +27,7 @@ struct SpacialNode<K, V> {
 
 // Impl drop so that changes are applied at drop
 pub struct PlacementOptions<'a> {
-    parent: &'a mut Layout,
+    parent: &'a mut LayoutBuilder,
     widget_ref: usize,
     parent_ref: Option<usize>,
     coords: Option<(Coordinate, Coordinate)>,
@@ -35,173 +36,6 @@ pub struct PlacementOptions<'a> {
     placement: Option<LayoutConstraint>,
     name: Option<String>,
 }
-
-#[derive(Debug, Copy, Clone)]
-pub enum Coordinate {
-    Absolute(i32),
-    Relative(f32),
-    Hybrid(i32, f32),
-    Adaptative(i32),
-}
-
-impl Coordinate {
-    fn is_null(&self) -> bool {
-        match self {
-            Coordinate::Absolute(a) => *a == 0,
-            Coordinate::Relative(r) => *r == 0.0,
-            Coordinate::Hybrid(a, r) => *a == 0 && *r == 0.0,
-            Coordinate::Adaptative(_) => false,
-        }
-    }
-
-    fn compute_adaptative_sizes(coords: &[Self], with_absolute_offset: i32) -> Self {
-        // TODO: with_absolute_offset useless
-        let mut space_to_occupy = Self::Hybrid(0, 1.0); // full size
-        let mut divider = 0;
-        for coord in coords {
-            if let Coordinate::Adaptative(offset) = coord {
-                divider += 1;
-                space_to_occupy = space_to_occupy + Self::Absolute(*offset);
-            } else {
-                space_to_occupy = space_to_occupy - *coord;
-            }
-        }
-        if divider == 0 {
-            return Self::Hybrid(0, 0.0);
-        }
-
-        if let Coordinate::Hybrid(a, r) = space_to_occupy {
-            let relative = r / divider as f32;
-            let absolute = a / divider as i32;
-            return Self::Hybrid(absolute, relative);
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn to_hybrid(&self) -> Self {
-        use Coordinate::*;
-
-        match self {
-            Absolute(a) => Hybrid(*a, 0.0),
-            Relative(r) => Hybrid(0, *r),
-            Hybrid(a, r) => Hybrid(*a, *r),
-            Adaptative(o) => Hybrid(*o, 1.0),
-        }
-    }
-
-    fn absolute_part(&self) -> Self {
-        use Coordinate::*;
-
-        let a = match self {
-            Absolute(a) => *a,
-            Relative(_) => 0,
-            Hybrid(a, _) => *a,
-            Adaptative(o) => *o,
-        };
-
-        Absolute(a)
-    }
-
-    fn absolute_part_i32(&self) -> i32 {
-        let Self::Absolute(x) = self.absolute_part() else {
-            return 0;
-        };
-        x
-    }
-
-    fn without_adaptative_offset(&self) -> Self {
-        if let Self::Adaptative(_) = self {
-            Self::Adaptative(0)
-        } else {
-            *self
-        }
-    }
-}
-
-impl std::ops::Add for Coordinate {
-    type Output = Coordinate;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        use Coordinate::*;
-
-        if self.is_null() {
-            return rhs;
-        }
-        if rhs.is_null() {
-            return self;
-        }
-        match (self, rhs) {
-            (Absolute(a1), Absolute(a2)) => Absolute(a1 + a2),
-            (Relative(r1), Relative(r2)) => Relative(r1 + r2),
-            (Hybrid(a1, r1), Hybrid(a2, r2)) => Hybrid(a1 + a2, r1 + r2),
-            (Absolute(a), Relative(r)) | (Relative(r), Absolute(a)) => Hybrid(a, r),
-            (Absolute(a), Hybrid(b1, b2)) | (Hybrid(b1, b2), Absolute(a)) => Hybrid(a + b1, b2),
-            (Relative(a), Hybrid(b1, b2)) | (Hybrid(b1, b2), Relative(a)) => Hybrid(b1, a + b2),
-            (Adaptative(o1), Adaptative(o2)) => Adaptative(o1 + o2),
-            (Adaptative(o), Absolute(a)) | (Absolute(a), Adaptative(o)) => Adaptative(o + a),
-            (Adaptative(o), Relative(_)) | (Relative(_), Adaptative(o)) => Adaptative(o),
-            (Adaptative(o), Hybrid(a, _)) | (Hybrid(a, _), Adaptative(o)) => Adaptative(o + a),
-        }
-    }
-}
-
-impl std::ops::Sub for Coordinate {
-    type Output = Coordinate;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        use Coordinate::*;
-
-        if rhs.is_null() {
-            return self;
-        }
-        match (self, rhs) {
-            (Absolute(a1), Absolute(a2)) => Absolute(a1 - a2),
-            (Relative(r1), Relative(r2)) => Relative(r1 - r2),
-            (Hybrid(a1, r1), Hybrid(a2, r2)) => Hybrid(a1 - a2, r1 - r2),
-            (Absolute(a), Relative(r)) => Hybrid(a, -r),
-            (Relative(r), Absolute(a)) => Hybrid(-a, r),
-            (Absolute(a), Hybrid(a2, r2)) => Hybrid(a - a2, -r2),
-            (Hybrid(a1, r1), Absolute(a2)) => Hybrid(a1 - a2, r1),
-            (Relative(r1), Hybrid(a2, r2)) => Hybrid(-a2, r1 - r2),
-            (Hybrid(a1, r1), Relative(r2)) => Hybrid(a1, r1 - r2),
-            (Adaptative(o1), Adaptative(o2)) => Adaptative(o1 - o2),
-
-            (Adaptative(o), Absolute(a)) => Adaptative(o - a),
-            (Absolute(a), Adaptative(o)) => Adaptative(a - o),
-            (Adaptative(o), Relative(_)) => Adaptative(o),
-            (Relative(_), Adaptative(o)) => Adaptative(o),
-            (Adaptative(o), Hybrid(a, _)) => Adaptative(o - a),
-            (Hybrid(a, _), Adaptative(o)) => Adaptative(a - o),
-        }
-    }
-}
-
-impl PartialEq for Coordinate {
-    fn eq(&self, other: &Self) -> bool {
-        use Coordinate::*;
-        // Convert to Hybrid for comparison
-        let self_hybrid = self.to_hybrid();
-        let other_hybrid = other.to_hybrid();
-        match (self_hybrid, other_hybrid) {
-            (Absolute(a1), Absolute(a2)) => a1 == a2,
-            (Relative(r1), Relative(r2)) => r1 == r2,
-            (Hybrid(a1, r1), Hybrid(a2, r2)) => a1 == a2 && r1 == r2,
-            (Adaptative(o1), Adaptative(o2)) => o1 == o2,
-
-            (Absolute(0), Relative(0.0)) | (Relative(0.0), Absolute(0)) => true,
-            (Absolute(0), Hybrid(0, 0.0)) | (Hybrid(0, 0.0), Absolute(0)) => true,
-
-            (Absolute(a), Hybrid(a2, 0.0)) | (Hybrid(a2, 0.0), Absolute(a)) => a == a2,
-            (Relative(r), Hybrid(0, r2)) | (Hybrid(0, r2), Relative(r)) => r == r2,
-
-            (Adaptative(0), Relative(1.0)) | (Relative(1.0), Adaptative(0)) => true,
-            (Adaptative(o), Hybrid(a, 1.0)) => a == o,
-            _ => false,
-        }
-    }
-}
-impl Eq for Coordinate {}
 
 #[derive(Debug)]
 enum LayoutConstraint {
@@ -212,10 +46,18 @@ enum LayoutConstraint {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct LayoutData {
+struct WidgetPlacement {
     tl: (Coordinate, Coordinate),
     width: Coordinate,
     height: Coordinate,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ComputedWidgetPlacement {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
 }
 
 impl<K, V> SpacialNode<K, V> {
@@ -388,7 +230,7 @@ impl<T> std::ops::Index<usize> for SpacialTree<T> {
     }
 }
 
-impl LayoutData {
+impl WidgetPlacement {
     fn new(x: Coordinate, y: Coordinate, width: Coordinate, height: Coordinate) -> Self {
         Self {
             tl: (x, y),
@@ -418,7 +260,7 @@ impl LayoutData {
     }
 }
 
-impl Layout {
+impl LayoutBuilder {
     pub fn new() -> Self {
         Self {
             widgets: Vec::new(),
@@ -439,7 +281,7 @@ impl Layout {
     fn compute_size_recursive(
         &mut self,
         node_ref: usize,
-        computed_layout: &mut HashMap<WidgetHdl, LayoutData>,
+        computed_layout: &mut HashMap<WidgetHdl, WidgetPlacement>,
     ) {
         use Coordinate::*;
 
@@ -451,7 +293,11 @@ impl Layout {
         // Compute width and height for adaptative widgets, then push them to the result vector in the correct order
         if let Adaptative(offset) = node.data.width {
             let line = self.layout_data.left_to_right(node_ref);
-            let last_offset = self.layout_data.0[*line.last().unwrap()].data.tl.0.absolute_part_i32();
+            let last_offset = self.layout_data.0[*line.last().unwrap()]
+                .data
+                .tl
+                .0
+                .absolute_part_i32();
             let adaptative_size = Coordinate::compute_adaptative_sizes(
                 &line
                     .iter()
@@ -471,12 +317,17 @@ impl Layout {
         }
         if let Adaptative(offset) = node.data.height {
             let column = self.layout_data.top_to_bottom(node_ref);
-            let last_offset = self.layout_data.0[*column.last().unwrap()].data.tl.1.absolute_part_i32();
+            let last_offset = self.layout_data.0[*column.last().unwrap()]
+                .data
+                .tl
+                .1
+                .absolute_part_i32();
             let adaptative_size = Coordinate::compute_adaptative_sizes(
                 &column
                     .iter()
                     .map(|e| self.layout_data.0[*e].data.height)
-                    .collect::<Vec<_>>(), -last_offset
+                    .collect::<Vec<_>>(),
+                -last_offset,
             );
 
             for child_ref in column.iter() {
@@ -499,15 +350,60 @@ impl Layout {
         }
     }
 
+    // Coords should be (0,0) at call, out should be an empty hashmap
+    // Expected to be called on top-left node
+    // TODO : keep private and give better interface
+    fn compute_offsets_recursive(
+        &self,
+        node_ref: usize,
+        coords: (u16, u16),
+        out: &mut HashMap<(u16, u16), (i32, i32)>,
+    ) {
+        let node = &self.layout_data[node_ref];
+
+        if out.contains_key(&coords) {
+            return;
+        }
+
+        let total_offset_x = self
+            .layout_data
+            .left_to_right(node_ref)
+            .into_iter()
+            .map(|e| &self.layout_data[e])
+            .fold(0, |acc, e| {
+                acc + e.data.tl.0.absolute_part_i32() + e.data.width.absolute_part_i32()
+            });
+
+        let total_offset_y = self
+            .layout_data
+            .top_to_bottom(node_ref)
+            .into_iter()
+            .map(|e| &self.layout_data[e])
+            .fold(0, |acc, e| {
+                acc + e.data.tl.1.absolute_part_i32() + e.data.height.absolute_part_i32()
+            });
+
+        out.insert(coords, (total_offset_x, total_offset_y));
+        if let Some(child_ref) = node.right {
+            self.compute_offsets_recursive(child_ref, (coords.0 + 1, coords.1), out);
+        }
+        if let Some(child_ref) = node.bottom {
+            self.compute_offsets_recursive(child_ref, (coords.0, coords.1 + 1), out);
+        }
+        
+
+        // all directions...
+    }
+
     /// Computes the coordinates of the widgets in the layout. Expected to be called on a top-left node.
     /// It will not look at upper or left neighbors.
     fn compute_coords_recursive(
         &self,
         node_ref: usize,
-        computed_layout: &mut HashMap<WidgetHdl, LayoutData>,
+        computed_layout: &mut HashMap<WidgetHdl, WidgetPlacement>,
     ) {
         use Coordinate::*;
-        // TODO : stack overflow here
+
         let node = &self.layout_data[node_ref];
         let wref = &self.widgets[node_ref];
         let node_layout = computed_layout[wref].clone();
@@ -515,31 +411,23 @@ impl Layout {
         if let Some(child_ref) = node.right {
             let child_layout = computed_layout.get_mut(&self.widgets[child_ref]).unwrap();
 
-            if let Adaptative(offset) = child_layout.tl.0 {
-                child_layout.tl.0 = node_layout.tl.0 + node_layout.width + Absolute(offset);
-            }
-            if let Adaptative(offset) = child_layout.tl.1 {
-                child_layout.tl.1 = node_layout.tl.1 + Absolute(offset);
-            }
+            child_layout.tl.0 += node_layout.tl.0 + node_layout.width;
+
             self.compute_coords_recursive(child_ref, computed_layout);
         }
         if let Some(child_ref) = node.bottom {
             let child_layout = computed_layout.get_mut(&self.widgets[child_ref]).unwrap();
 
-            if let Adaptative(offset) = child_layout.tl.0 {
-                child_layout.tl.0 = node_layout.tl.0 + Absolute(offset);
-            }
-            if let Adaptative(offset) = child_layout.tl.1 {
-                child_layout.tl.1 = node_layout.tl.1 + node_layout.height + Absolute(offset);
-            }
+            child_layout.tl.1 += node_layout.tl.1 + node_layout.height;
+
             self.compute_coords_recursive(child_ref, computed_layout);
         }
     }
 
-    fn compute(mut self) -> ComputedLayout {
+    fn process(mut self) -> Layout {
         use Coordinate::*;
 
-        let mut r: HashMap<WidgetHdl, LayoutData> = HashMap::new();
+        let mut r: HashMap<WidgetHdl, WidgetPlacement> = HashMap::new();
         let mut starting_points = Vec::new();
 
         for node_idx in 0..self.layout_data.0.len() {
@@ -560,16 +448,21 @@ impl Layout {
         }
 
         for node_idx in starting_points {
-            // TODO: compute coords from top left and add stopping point
             self.compute_coords_recursive(self.layout_data.top_left_from(node_idx).1, &mut r);
         }
 
-        ComputedLayout(r)
+        Layout(r)
     }
 }
 
+impl Layout {
+    // fn compute(self, size_x: u32, size_y: u32) -> ComputedLayout {
+    //     ComputedLayout(self.0.into_iter().map(|(k,v)| (k, v.)))
+    // }
+}
+
 impl<'a> PlacementOptions<'a> {
-    fn new(layout: &'a mut Layout) -> Self {
+    fn new(layout: &'a mut LayoutBuilder) -> Self {
         Self {
             widget_ref: layout.layout_data.0.len(),
             parent: layout,
@@ -640,13 +533,12 @@ impl Drop for PlacementOptions<'_> {
         use Coordinate::*;
 
         if let Some(placement) = &self.placement {
-            // TODO: now top-left are set relative to neighbor.
             let parent_ref = &self.parent.layout_data.0[self.parent_ref.unwrap()].data;
             match placement {
                 LayoutConstraint::Left(offset) => {
-                    let layout = LayoutData::new(
-                        Adaptative(0) - *offset,
-                        parent_ref.tl.1.without_adaptative_offset(), // -> now y is 0 (bc relative to neighbor)
+                    let layout = WidgetPlacement::new(
+                        -*offset,
+                        Absolute(0),
                         Adaptative(0),
                         parent_ref.height,
                     );
@@ -655,9 +547,9 @@ impl Drop for PlacementOptions<'_> {
                         .add_left(layout, self.parent_ref.unwrap());
                 }
                 LayoutConstraint::Right(offset) => {
-                    let layout = LayoutData::new(
-                        Adaptative(0) + *offset,
-                        parent_ref.tl.1.without_adaptative_offset(),
+                    let layout = WidgetPlacement::new(
+                        *offset,
+                        Absolute(0),
                         Adaptative(0),
                         parent_ref.height,
                     );
@@ -666,23 +558,15 @@ impl Drop for PlacementOptions<'_> {
                         .add_right(layout, self.parent_ref.unwrap());
                 }
                 LayoutConstraint::Above(offset) => {
-                    let layout = LayoutData::new(
-                        parent_ref.tl.0.without_adaptative_offset(),
-                        Adaptative(0) - *offset,
-                        parent_ref.width,
-                        Adaptative(0),
-                    );
+                    let layout =
+                        WidgetPlacement::new(Absolute(0), *offset, parent_ref.width, Adaptative(0));
                     self.parent
                         .layout_data
                         .add_above(layout, self.parent_ref.unwrap());
                 }
                 LayoutConstraint::Below(offset) => {
-                    let layout = LayoutData::new(
-                        parent_ref.tl.0.without_adaptative_offset(),
-                        Adaptative(0) + *offset,
-                        parent_ref.width,
-                        Adaptative(0),
-                    );
+                    let layout =
+                        WidgetPlacement::new(Absolute(0), *offset, parent_ref.width, Adaptative(0));
                     self.parent
                         .layout_data
                         .add_below(layout, self.parent_ref.unwrap());
@@ -690,7 +574,7 @@ impl Drop for PlacementOptions<'_> {
             }
         } else {
             // No relative placement specified
-            self.parent.layout_data.add_node(LayoutData::empty());
+            self.parent.layout_data.add_node(WidgetPlacement::empty());
         }
         let layout_data = &mut self.parent.layout_data.0[self.widget_ref].data;
         if let Some(name) = &self.name {
@@ -831,9 +715,9 @@ mod tests {
         // Looks through the computed_layout to find a Dummy widget with its data matching widget_data
         // ComputedLayout MUST contain only Dummy
         unsafe fn get_widget(
-            computed_layout: &ComputedLayout,
+            computed_layout: &Layout,
             widget_data: u32,
-        ) -> Option<&LayoutData> {
+        ) -> Option<&WidgetPlacement> {
             for (widget_hdl, layout_data) in &computed_layout.0 {
                 let r = widget_hdl.widget.displayable.read().unwrap();
                 let x = &*r as *const dyn Displayable as *const tests::Dummy;
@@ -849,7 +733,7 @@ mod tests {
 
         #[test]
         fn above_below() {
-            let mut layout = Layout::new();
+            let mut layout = LayoutBuilder::new();
             let mut dg = super::DummyGenerator::new();
             let widgets = dg.get_n_widgets(2);
 
@@ -858,7 +742,7 @@ mod tests {
                 .add_widget(&widgets[1])
                 .under_last_widget(Absolute(0));
 
-            let computed_layout = layout.compute();
+            let computed_layout = layout.process();
             let w1_layout_data = unsafe { get_widget(&computed_layout, 0) };
             let w2_layout_data = unsafe { get_widget(&computed_layout, 1) };
 
@@ -874,7 +758,7 @@ mod tests {
 
         #[test]
         fn left_right() {
-            let mut layout = Layout::new();
+            let mut layout = LayoutBuilder::new();
             let mut dg = super::DummyGenerator::new();
             let widgets = dg.get_n_widgets(2);
 
@@ -883,7 +767,7 @@ mod tests {
                 .add_widget(&widgets[1])
                 .right_to_last_widget(Absolute(5));
 
-            let computed_layout = layout.compute();
+            let computed_layout = layout.process();
             let w1_layout_data = unsafe { get_widget(&computed_layout, 0) };
             let w2_layout_data = unsafe { get_widget(&computed_layout, 1) };
 
@@ -900,7 +784,7 @@ mod tests {
 
         #[test]
         fn simple_layout() {
-            let mut layout = Layout::new();
+            let mut layout = LayoutBuilder::new();
             let mut dg = super::DummyGenerator::new();
             let widgets = dg.get_n_widgets(4);
 
@@ -921,7 +805,7 @@ mod tests {
 
             assert_eq!(layout.layout_data.top_left_from(0).1, 0); // The first widget added should be the top left node
 
-            let computed_layout = layout.compute();
+            let computed_layout = layout.process();
 
             let w1_layout_data = unsafe { get_widget(&computed_layout, 0).unwrap() };
             let w2_layout_data = unsafe { get_widget(&computed_layout, 1).unwrap() };
@@ -955,7 +839,6 @@ mod tests {
 
         #[test]
         fn hybrid_sizes() {
-
             todo!("Here a test where sizes are all given hybrid. Important")
         }
     }

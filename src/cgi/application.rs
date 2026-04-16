@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use crate::cgi::layout::Layout;
+use crate::cgi::layout::LayoutBuilder;
 
 pub struct Application {
-    pub layouts: HashMap<String, Layout>,
+    pub layouts: HashMap<String, LayoutBuilder>,
     pub current_layout: String,
     pub behavior: fn((u16, u16)) -> String,
 }
@@ -16,7 +16,7 @@ impl Application {
         }
     }
 
-    pub fn add_layout(&mut self, name: &str, layout: Layout) {
+    pub fn add_layout(&mut self, name: &str, layout: LayoutBuilder) {
         self.layouts.insert(name.to_string(), layout);
         if self.current_layout.is_empty() {
             self.current_layout = name.to_string();
