@@ -26,7 +26,7 @@ fn main() {
     let mut my_widget1 = cgi::Widget::new(my_widget1);
     let mut my_widget2 = cgi::Widget::new(my_widget2);
 
-    let mut layout = cgi::Layout::new();
+    let mut layout = cgi::LayoutBuilder::new();
     layout.add_widget(&my_widget1);
     layout.add_widget(&my_widget2);
 

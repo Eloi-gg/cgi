@@ -81,6 +81,17 @@ impl Coordinate {
             *self
         }
     }
+
+    pub(crate) fn compute_at(&self, size: i32) -> i32 {
+        use Coordinate::*;
+
+        match self {
+            Absolute(a) => *a,
+            Relative(r) => (size as f32 * *r) as i32,
+            Hybrid(a, r) => *a + (size as f32 * *r) as i32,
+            Adaptative(o) => *o,
+        }
+    }
 }
 
 impl Add for Coordinate {

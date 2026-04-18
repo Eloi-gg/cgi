@@ -11,8 +11,10 @@ pub struct LayoutBuilder {
     layout_data: SpacialTree<WidgetPlacement>,
 }
 
-pub struct Layout(HashMap<WidgetHdl, WidgetPlacement>);
-pub(crate) struct ComputedLayout(HashMap<WidgetHdl, ComputedWidgetPlacement>);
+pub struct Layout {
+    layout: HashMap<WidgetHdl, (WidgetPlacement, (i32, i32))>,
+}
+pub(crate) struct RenderedLayout(HashMap<WidgetHdl, ComputedWidgetPlacement>);
 
 /// Node in a spacial tree, stores keys to its neighbors and its data
 /// The nodes need to be stored in a structure that allows access by K
@@ -353,47 +355,45 @@ impl LayoutBuilder {
     // Coords should be (0,0) at call, out should be an empty hashmap
     // Expected to be called on top-left node
     // TODO : keep private and give better interface
-    fn compute_offsets_recursive(
-        &self,
-        node_ref: usize,
-        coords: (u16, u16),
-        out: &mut HashMap<(u16, u16), (i32, i32)>,
-    ) {
+    fn compute_offsets_recursive(&self, node_ref: usize, out: &mut HashMap<usize, (i32, i32)>) {
         let node = &self.layout_data[node_ref];
 
-        if out.contains_key(&coords) {
+        if out.contains_key(&node_ref) {
             return;
         }
 
-        let total_offset_x = self
-            .layout_data
-            .left_to_right(node_ref)
-            .into_iter()
-            .map(|e| &self.layout_data[e])
+        let left_to_right = self.layout_data.left_to_right(node_ref);
+        let total_offset_x = left_to_right
+            .iter()
+            .map(|e| &self.layout_data[*e])
             .fold(0, |acc, e| {
                 acc + e.data.tl.0.absolute_part_i32() + e.data.width.absolute_part_i32()
             });
+        let individual_offset_x = total_offset_x / (left_to_right.len() as i32);
 
-        let total_offset_y = self
-            .layout_data
-            .top_to_bottom(node_ref)
-            .into_iter()
-            .map(|e| &self.layout_data[e])
+        let top_to_bottom = self.layout_data.top_to_bottom(node_ref);
+        let total_offset_y = top_to_bottom
+            .iter()
+            .map(|e| &self.layout_data[*e])
             .fold(0, |acc, e| {
                 acc + e.data.tl.1.absolute_part_i32() + e.data.height.absolute_part_i32()
             });
+        let individual_offset_y = total_offset_y / (top_to_bottom.len() as i32);
 
-        out.insert(coords, (total_offset_x, total_offset_y));
-        
+        out.insert(node_ref, (total_offset_x, total_offset_y));
+
         if let Some(child_ref) = node.right {
-            self.compute_offsets_recursive(child_ref, (coords.0 + 1, coords.1), out);
+            self.compute_offsets_recursive(child_ref, out);
         }
         if let Some(child_ref) = node.bottom {
-            self.compute_offsets_recursive(child_ref, (coords.0, coords.1 + 1), out);
+            self.compute_offsets_recursive(child_ref, out);
         }
-        
-
-        // all directions...
+        if let Some(child_ref) = node.left {
+            self.compute_offsets_recursive(child_ref, out);
+        }
+        if let Some(child_ref) = node.top {
+            self.compute_offsets_recursive(child_ref, out);
+        }
     }
 
     /// Computes the coordinates of the widgets in the layout. Expected to be called on a top-left node.
@@ -403,8 +403,6 @@ impl LayoutBuilder {
         node_ref: usize,
         computed_layout: &mut HashMap<WidgetHdl, WidgetPlacement>,
     ) {
-        use Coordinate::*;
-
         let node = &self.layout_data[node_ref];
         let wref = &self.widgets[node_ref];
         let node_layout = computed_layout[wref].clone();
@@ -448,18 +446,46 @@ impl LayoutBuilder {
             );
         }
 
-        for node_idx in starting_points {
-            self.compute_coords_recursive(self.layout_data.top_left_from(node_idx).1, &mut r);
+        let mut offsets = HashMap::new();
+
+        for node_idx in starting_points.iter() {
+            self.compute_coords_recursive(self.layout_data.top_left_from(*node_idx).1, &mut r);
+            self.compute_offsets_recursive(
+                self.layout_data.top_left_from(*node_idx).1,
+                &mut offsets,
+            );
         }
 
-        Layout(r)
+        let layout = offsets
+            .into_iter()
+            .map(|(k, v)| (self.widgets[k].clone(), (r[&self.widgets[k]].clone(), v)))
+            .collect();
+
+        Layout { layout }
     }
 }
 
 impl Layout {
-    // fn compute(self, size_x: u32, size_y: u32) -> ComputedLayout {
-    //     ComputedLayout(self.0.into_iter().map(|(k,v)| (k, v.)))
-    // }
+    fn compute(self, size_x: i32, size_y: i32) -> RenderedLayout {
+            let mut rendered_layout = HashMap::new();
+            
+            for (widget_hdl, (layout_data, offset)) in self.layout {
+                let local_size_x = size_x - offset.0;
+                let local_size_y = size_y - offset.1;
+
+                let x = layout_data.tl.0.compute_at(local_size_x);
+                let y = layout_data.tl.1.compute_at(local_size_y);
+                let width = layout_data.width.compute_at(local_size_x);
+                let height = layout_data.height.compute_at(local_size_y);
+
+                rendered_layout.insert(
+                    widget_hdl,
+                    ComputedWidgetPlacement { x, y, width, height },
+                );
+            }
+    
+            RenderedLayout(rendered_layout)
+    }
 }
 
 impl<'a> PlacementOptions<'a> {
@@ -719,7 +745,7 @@ mod tests {
             computed_layout: &Layout,
             widget_data: u32,
         ) -> Option<&WidgetPlacement> {
-            for (widget_hdl, layout_data) in &computed_layout.0 {
+            for (widget_hdl, (layout_data, ..)) in &computed_layout.layout {
                 let r = widget_hdl.widget.displayable.read().unwrap();
                 let x = &*r as *const dyn Displayable as *const tests::Dummy;
                 let current_widget_data = unsafe { (*x).data };
@@ -730,6 +756,33 @@ mod tests {
                 }
             }
             None
+        }
+
+        #[test]
+        fn simplest_layout() {
+            let mut layout = LayoutBuilder::new();
+            let mut dg = super::DummyGenerator::new();
+            let widgets = dg.get_n_widgets(1);
+
+            layout.add_widget(&widgets[0])
+                .at_coords(Absolute(10), Absolute(20))
+                .with_size(Relative(0.9), Relative(0.8));
+
+            let computed_layout = layout.process();
+            let w1_layout_data = unsafe { get_widget(&computed_layout, 0) };
+
+            assert_eq!(w1_layout_data.unwrap().tl.0, Absolute(10));
+            assert_eq!(w1_layout_data.unwrap().tl.1, Absolute(20));
+            assert_eq!(w1_layout_data.unwrap().width, Relative(0.9));
+            assert_eq!(w1_layout_data.unwrap().height, Relative(0.8));
+
+            let rendered_layout = computed_layout.compute(100, 100);
+
+            let widget = rendered_layout.0.iter().next().unwrap();
+            assert_eq!(widget.1.x, 10);
+            assert_eq!(widget.1.y, 20);
+            assert_eq!(widget.1.width, 90);
+            assert_eq!(widget.1.height, 80);
         }
 
         #[test]
@@ -842,5 +895,6 @@ mod tests {
         fn hybrid_sizes() {
             todo!("Here a test where sizes are all given hybrid. Important")
         }
+        
     }
 }
