@@ -18,8 +18,7 @@ impl Coordinate {
         }
     }
 
-    pub(crate) fn compute_adaptative_sizes(coords: &[Self], with_absolute_offset: i32) -> Self {
-        // TODO: with_absolute_offset useless
+    pub(crate) fn compute_adaptative_sizes(coords: &[Self]) -> Self {
         let mut space_to_occupy = Self::Hybrid(0, 1.0); // full size
         let mut divider = 0;
         for coord in coords {
