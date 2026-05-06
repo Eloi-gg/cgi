@@ -22,11 +22,15 @@ impl Coordinate {
         let mut space_to_occupy = Self::Hybrid(0, 1.0); // full size
         let mut divider = 0;
         for coord in coords {
-            if let Coordinate::Adaptative(offset) = coord {
-                divider += 1;
-                space_to_occupy = space_to_occupy + Self::Absolute(*offset);
-            } else {
-                space_to_occupy = space_to_occupy - *coord;
+            match coord {
+                Coordinate::Adaptative(offset) => {
+                    divider += 1;
+                    space_to_occupy = space_to_occupy + Self::Absolute(*offset);
+                }
+                Coordinate::Hybrid(..) | Coordinate::Relative(..) => {
+                    space_to_occupy = space_to_occupy - coord.relative_part();
+                }
+                _ => {}
             }
         }
         if divider == 0 {
@@ -89,6 +93,16 @@ impl Coordinate {
             Relative(r) => (size as f32 * *r) as i32,
             Hybrid(a, r) => *a + (size as f32 * *r) as i32,
             Adaptative(o) => *o,
+        }
+    }
+
+    fn relative_part(&self) -> Self {
+        use Coordinate::*;
+
+        match self {
+            Relative(r) => Relative(*r),
+            Hybrid(_, r) => Relative(*r),
+            _ => Absolute(0),
         }
     }
 }
@@ -196,3 +210,21 @@ impl PartialEq for Coordinate {
     }
 }
 impl Eq for Coordinate {}
+
+impl From<i32> for Coordinate {
+    fn from(value: i32) -> Self {
+        Coordinate::Absolute(value)
+    }
+}
+
+impl From<f32> for Coordinate {
+    fn from(value: f32) -> Self {
+        Coordinate::Relative(value)
+    }
+}
+
+impl From<(i32, f32)> for Coordinate {
+    fn from(value: (i32, f32)) -> Self {
+        Coordinate::Hybrid(value.0, value.1)
+    }
+}

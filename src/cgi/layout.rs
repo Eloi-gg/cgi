@@ -27,17 +27,20 @@ struct SpacialNode<K, V> {
     bottom: Option<K>,
 }
 
-// Impl drop so that changes are applied at drop
 pub struct PlacementOptions<'a> {
     parent: &'a mut LayoutBuilder,
     widget_ref: usize,
     parent_ref: Option<usize>,
-    coords: Option<(Coordinate, Coordinate)>,
+    coords: (Option<Coordinate>, Option<Coordinate>),
     width: Option<Coordinate>,
     height: Option<Coordinate>,
     placement: Option<LayoutConstraint>,
+    shift: (Coordinate, Coordinate),
     name: Option<String>,
-    keep_aligned: bool,
+    absolute_x: bool,
+    absolute_y: bool,
+    absolute_width: bool,
+    absolute_height: bool,
 }
 
 #[derive(Debug)]
@@ -48,21 +51,15 @@ enum LayoutConstraint {
     Below(Coordinate),
 }
 
-// TODO delete ?
-//
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Alignment {
-    Unaligned,
-    AlignedX,
-    AlignedY,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct WidgetPlacement {
     tl: (Coordinate, Coordinate),
     width: Coordinate,
     height: Coordinate,
-    keep_aligned: bool,
+    absolute_x: bool,
+    absolute_y: bool,
+    absolute_width: bool,
+    absolute_height: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -249,21 +246,19 @@ impl WidgetPlacement {
             tl: (x, y),
             width,
             height,
-            keep_aligned: false,
-        }
-    }
-
-    fn empty() -> Self {
-        Self {
-            tl: (Coordinate::Adaptative(0), Coordinate::Adaptative(0)),
-            width: Coordinate::Adaptative(0),
-            height: Coordinate::Adaptative(0),
-            keep_aligned: false,
+            absolute_x: false,
+            absolute_y: false,
+            absolute_width: false,
+            absolute_height: false,
         }
     }
 
     fn with_width(self, width: Coordinate) -> Self {
-        Self { width, ..self }
+        Self {
+            width,
+            absolute_width: false,
+            ..self
+        }
     }
 
     fn with_height(self, height: Coordinate) -> Self {
@@ -293,68 +288,6 @@ impl LayoutBuilder {
         PlacementOptions::new(self)
     }
 
-    // TODO : fold functions for cleaner interface : recursive functions are holded inside their callable interfaces
-    // Should only be called on nodes with keep_aligned = true
-    fn pre_compute_size(
-        &self,
-        node_ref: usize,
-        computed_layout: &mut HashMap<WidgetHdl, WidgetPlacement>,
-    ) {
-        use Coordinate::*;
-
-        if computed_layout.contains_key(&self.widgets[node_ref]) {
-            panic!("Looping references detected: widget n{}", node_ref);
-        }
-
-        let mut node = self.layout_data[node_ref].clone();
-
-        if node.data.keep_aligned {
-            for (i, child) in node.next_ordered(&mut [0; 4]).iter().enumerate() {
-                // node_ref - 1 => parent
-                if *child == node_ref - 1 {
-                    let parent = *child;
-                    self.pre_compute_size(parent, computed_layout);
-                    // left or right
-                    if i == 0 || i == 1 {
-                        node.data.height = self.layout_data.0[parent].data.height;
-                    }
-                    // top or bottom
-                    else {
-                        node.data.width = self.layout_data.0[parent].data.width;
-                    }
-                    computed_layout.insert(self.widgets[node_ref].clone(), node.data);
-                    break;
-                }
-            }
-        }
-        // Will only happen because it's a parent from a keep_aligned node
-        else {
-            {
-                let line = self.layout_data.left_to_right(node_ref);
-                let adaptative_size = Coordinate::compute_adaptative_sizes(
-                    &line
-                        .iter()
-                        .map(|e| self.layout_data.0[*e].data.width)
-                        .collect::<Vec<_>>(),
-                );
-
-                for line_ref in line.iter() {
-                    let mut line_member = self.layout_data.0[*line_ref].data.clone();
-                    if line_member.keep_aligned {
-                        // node_ref + 1 is where this function has been called from : this would loop forever
-                        if *line_ref != node_ref + 1 {
-                            self.pre_compute_size(*line_ref, computed_layout);
-                        }
-                    }
-                    if let Adaptative(offset) = line_member.width {
-                        line_member.width = adaptative_size + Absolute(offset);
-                    }
-                }
-            }
-        }
-    }
-
-    // TODO: remove mut self, no need to be mutable (i think)
     fn compute_size_recursive(
         &mut self,
         node_ref: usize,
@@ -431,7 +364,12 @@ impl LayoutBuilder {
     // Coords should be (0,0) at call, out should be an empty hashmap
     // Expected to be called on top-left node
     // TODO : keep private and give better interface
-    fn compute_offsets_recursive(&self, node_ref: usize, out: &mut HashMap<usize, (i32, i32)>) {
+    fn compute_offsets_recursive(
+        &self,
+        node_ref: usize,
+        computed_layout: &HashMap<WidgetHdl, WidgetPlacement>,
+        out: &mut HashMap<usize, (i32, i32)>,
+    ) {
         let node = &self.layout_data[node_ref];
 
         if out.contains_key(&node_ref) {
@@ -439,25 +377,31 @@ impl LayoutBuilder {
         }
 
         let left_to_right = self.layout_data.left_to_right(node_ref);
-        let total_offset_x = left_to_right
-            .iter()
-            .map(|e| &self.layout_data[*e])
-            .fold(0, |acc, e| {
-                acc + e.data.tl.0.absolute_part_i32() + e.data.width.absolute_part_i32()
-            });
-
         let top_to_bottom = self.layout_data.top_to_bottom(node_ref);
-        let total_offset_y = top_to_bottom
-            .iter()
-            .map(|e| &self.layout_data[*e])
-            .fold(0, |acc, e| {
-                acc + e.data.tl.1.absolute_part_i32() + e.data.height.absolute_part_i32()
-            });
 
+        let total_offset_x = {
+            let last = left_to_right
+                .iter()
+                .map(|e| computed_layout.get(&self.widgets[*e]).unwrap())
+                .last()
+                .unwrap();
+
+            last.tl.0.absolute_part_i32() + last.width.absolute_part_i32()
+        };
+
+        let total_offset_y = {
+            let last = top_to_bottom
+                .iter()
+                .map(|e| computed_layout.get(&self.widgets[*e]).unwrap())
+                .last()
+                .unwrap();
+
+            last.tl.1.absolute_part_i32() + last.height.absolute_part_i32()
+        };
         out.insert(node_ref, (total_offset_x, total_offset_y));
 
         for child in node.next_ordered(&mut [0; 4]) {
-            self.compute_offsets_recursive(*child, out);
+            self.compute_offsets_recursive(*child, computed_layout, out);
         }
     }
 
@@ -475,48 +419,45 @@ impl LayoutBuilder {
         if let Some(child_ref) = node.right {
             let child_layout = computed_layout.get_mut(&self.widgets[child_ref]).unwrap();
 
-            child_layout.tl.0 += node_layout.tl.0 + node_layout.width;
-            if child_layout.keep_aligned {
+            if !child_layout.absolute_x {
+                child_layout.tl.0 += node_layout.tl.0 + node_layout.width;
+            }
+            if !child_layout.absolute_y {
                 child_layout.tl.1 += node_layout.tl.1;
-                child_layout.height = node_layout.height; // useful ?
+            }
+            if !child_layout.absolute_height {
+                child_layout.height = node_layout.height;
             }
 
             self.compute_coords_recursive(child_ref, computed_layout);
-        } else if let None = node.left {
-            // Alone on its row
-            if let Coordinate::Adaptative(offset) = node.data.tl.0 {
-                computed_layout.get_mut(wref).unwrap().tl.0 = Coordinate::Absolute(offset);
-            }
         }
 
         if let Some(child_ref) = node.bottom {
             let child_layout = computed_layout.get_mut(&self.widgets[child_ref]).unwrap();
 
-            child_layout.tl.1 += node_layout.tl.1 + node_layout.height;
-            if child_layout.keep_aligned {
+            if !child_layout.absolute_x {
                 child_layout.tl.0 += node_layout.tl.0;
-                child_layout.width = node_layout.width; // useful ?
             }
+            if !child_layout.absolute_y {
+                child_layout.tl.1 += node_layout.tl.1 + node_layout.height;
+            }
+            if !child_layout.absolute_width {
+                child_layout.width = node_layout.width;
+            }
+
             self.compute_coords_recursive(child_ref, computed_layout);
-        } else if let None = node.top {
-            // Alone on its Column
-            if let Coordinate::Adaptative(offset) = node.data.tl.1 {
-                computed_layout.get_mut(wref).unwrap().tl.1 = Coordinate::Absolute(offset);
-            }
         }
     }
 
     fn process(mut self) -> Layout {
         use Coordinate::*;
 
+        // TODO: either all functions work with a hashmap but we make its key a usize, either we juste modify self and export a hashmap at the end
+        // Because some recursive functions read from self, or from the hashmap, which is inconsistent
+
         let mut r: HashMap<WidgetHdl, WidgetPlacement> = HashMap::new();
         let mut starting_points = Vec::new();
 
-        for node_idx in
-            (0..self.layout_data.0.len()).filter(|e| self.layout_data[*e].data.keep_aligned)
-        {
-            self.pre_compute_size(node_idx, &mut r);
-        }
         for node_idx in 0..self.layout_data.0.len() {
             if !r.contains_key(&self.widgets[node_idx]) {
                 starting_points.push(node_idx);
@@ -538,8 +479,12 @@ impl LayoutBuilder {
 
         for node_idx in starting_points.iter() {
             self.compute_coords_recursive(self.layout_data.top_left_from(*node_idx).1, &mut r);
+        }
+
+        for node_idx in starting_points.iter() {
             self.compute_offsets_recursive(
                 self.layout_data.top_left_from(*node_idx).1,
+                &r,
                 &mut offsets,
             );
         }
@@ -550,6 +495,31 @@ impl LayoutBuilder {
             .collect();
 
         Layout { layout }
+    }
+
+    fn check_for_collisions(&self, placement: LayoutConstraint, widget_ref: usize) {
+        let horizontal_check = match placement {
+            LayoutConstraint::Left(_) | LayoutConstraint::Right(_) => true,
+            _ => false,
+        };
+
+        if horizontal_check {
+            let linked_widgets = self
+                .layout_data
+                .left_to_right(widget_ref)
+                .iter()
+                .collect::<HashSet<_>>();
+
+            for (i, e) in self.layout_data.0.iter().enumerate() {
+                if !linked_widgets.contains(&i) {
+
+                }
+            }
+        }
+
+        todo!(
+            "This function checks if the widget collides with any other widget that is not linked to it and links them"
+        )
     }
 }
 
@@ -587,41 +557,58 @@ impl<'a> PlacementOptions<'a> {
             widget_ref: layout.layout_data.0.len(),
             parent: layout,
             parent_ref: None,
-            coords: None,
+            coords: (None, None),
             width: None,
             height: None,
             placement: None,
+            shift: (Coordinate::Absolute(0), Coordinate::Absolute(0)),
             name: None,
-            keep_aligned: false,
-            // keep_aligned_y: false,
+            absolute_x: false,
+            absolute_y: false,
+            absolute_width: false,
+            absolute_height: false,
         }
     }
 
-    pub fn at_coords(mut self, x: Coordinate, y: Coordinate) -> Self {
-        self.coords = Some((x, y));
+    pub fn at_coords<T: Into<Coordinate>, U: Into<Coordinate>>(mut self, x: T, y: U) -> Self {
+        self.coords = (Some(x.into()), Some(y.into()));
+        self.absolute_x = true;
+        self.absolute_y = true;
         self
     }
 
-    pub fn right_to_last_widget(mut self, offset: Coordinate) -> Self {
-        self.placement = Some(LayoutConstraint::Right(offset));
+    pub fn with_x<T: Into<Coordinate>>(mut self, x: T) -> Self {
+        self.coords.0 = Some(x.into());
+        self.absolute_x = true;
+        self
+    }
+
+    pub fn with_y<T: Into<Coordinate>>(mut self, y: T) -> Self {
+        self.coords.1 = Some(y.into());
+        self.absolute_y = true;
+        self
+    }
+
+    pub fn right_to_last_widget<T: Into<Coordinate>>(mut self, offset: T) -> Self {
+        self.placement = Some(LayoutConstraint::Right(offset.into()));
         self.parent_ref = Some(self.widget_ref - 1);
         self
     }
 
-    pub fn under_last_widget(mut self, offset: Coordinate) -> Self {
-        self.placement = Some(LayoutConstraint::Below(offset));
+    pub fn under_last_widget<T: Into<Coordinate>>(mut self, offset: T) -> Self {
+        self.placement = Some(LayoutConstraint::Below(offset.into()));
         self.parent_ref = Some(self.widget_ref - 1);
         self
     }
 
-    pub fn above_last_widget(mut self, offset: Coordinate) -> Self {
-        self.placement = Some(LayoutConstraint::Above(offset));
+    pub fn above_last_widget<T: Into<Coordinate>>(mut self, offset: T) -> Self {
+        self.placement = Some(LayoutConstraint::Above(offset.into()));
         self.parent_ref = Some(self.widget_ref - 1);
         self
     }
 
-    pub fn left_to_last_widget(mut self, offset: Coordinate) -> Self {
-        self.placement = Some(LayoutConstraint::Left(offset));
+    pub fn left_to_last_widget<T: Into<Coordinate>>(mut self, offset: T) -> Self {
+        self.placement = Some(LayoutConstraint::Left(offset.into()));
         self.parent_ref = Some(self.widget_ref - 1);
         self
     }
@@ -631,24 +618,30 @@ impl<'a> PlacementOptions<'a> {
         self
     }
 
-    pub fn with_size(mut self, width: Coordinate, height: Coordinate) -> Self {
-        self.width = Some(width);
-        self.height = Some(height);
+    pub fn with_size<T: Into<Coordinate>, U: Into<Coordinate>>(
+        mut self,
+        width: T,
+        height: U,
+    ) -> Self {
+        self.width = Some(width.into());
+        self.height = Some(height.into());
         self
     }
 
-    pub fn with_height(mut self, height: Coordinate) -> Self {
-        self.height = Some(height);
+    pub fn with_height<T: Into<Coordinate>>(mut self, height: T) -> Self {
+        self.height = Some(height.into());
+        self.absolute_height = true;
         self
     }
 
-    pub fn with_width(mut self, width: Coordinate) -> Self {
-        self.width = Some(width);
+    pub fn with_width<T: Into<Coordinate>>(mut self, width: T) -> Self {
+        self.width = Some(width.into());
+        self.absolute_width = true;
         self
     }
 
-    pub fn keep_aligned(mut self) -> Self {
-        self.keep_aligned = true;
+    pub fn shift<T: Into<Coordinate>, U: Into<Coordinate>>(mut self, x: T, y: U) -> Self {
+        self.shift = (x.into(), y.into());
         self
     }
 }
@@ -656,7 +649,7 @@ impl<'a> PlacementOptions<'a> {
 impl Drop for PlacementOptions<'_> {
     fn drop(&mut self) {
         use Coordinate::*;
-
+        let mut has_been_moved = false;
         if let Some(placement) = &self.placement {
             let parent_ref = &self.parent.layout_data.0[self.parent_ref.unwrap()].data;
             match placement {
@@ -699,23 +692,52 @@ impl Drop for PlacementOptions<'_> {
             }
         } else {
             // No relative placement specified
-            self.parent.layout_data.add_node(WidgetPlacement::empty());
+            self.parent.layout_data.add_node(WidgetPlacement::new(
+                Coordinate::Adaptative(0),
+                Coordinate::Adaptative(0),
+                Coordinate::Adaptative(0),
+                Coordinate::Adaptative(0),
+            ));
         }
 
         let layout_data = &mut self.parent.layout_data.0[self.widget_ref].data;
         if let Some(name) = &self.name {
             self.parent.names.insert(name.clone(), self.widget_ref);
         }
-        if let Some((x, y)) = self.coords {
-            layout_data.tl = (x, y);
+        if let Some(x) = self.coords.0 {
+            layout_data.tl.0 = x;
+            has_been_moved = true;
+        }
+        if let Some(y) = self.coords.1 {
+            layout_data.tl.1 = y;
+            has_been_moved = true;
         }
         if let Some(width) = self.width {
             layout_data.width = width;
+            has_been_moved = true;
         }
         if let Some(height) = self.height {
             layout_data.height = height;
+            has_been_moved = true;
         }
-        layout_data.keep_aligned = self.keep_aligned;
+        if !self.shift.0.is_null() {
+            layout_data.tl.0 += self.shift.0;
+            has_been_moved = true;
+        }
+        if !self.shift.1.is_null() {
+            layout_data.tl.1 += self.shift.1;
+            has_been_moved = true;
+        }
+        layout_data.absolute_x = self.absolute_x;
+        layout_data.absolute_y = self.absolute_y;
+        layout_data.absolute_width = self.absolute_width;
+        layout_data.absolute_height = self.absolute_height;
+
+        if has_been_moved {
+            if let Some(placement) = self.placement {
+                self.parent.check_for_collisions(placement, self.widget_ref);
+            }
+        }
     }
 }
 
@@ -884,7 +906,7 @@ mod tests {
             let computed_layout = layout.process();
             let w1_layout_data = unsafe { get_widget(&computed_layout, 0) };
 
-            assert_eq!(w1_layout_data.unwrap().tl.0, Absolute(10)); // Goes to 0 since alone in row/column TODO
+            assert_eq!(w1_layout_data.unwrap().tl.0, Absolute(10));
             assert_eq!(w1_layout_data.unwrap().tl.1, Absolute(20));
             assert_eq!(w1_layout_data.unwrap().width, Relative(1.0));
             assert_eq!(w1_layout_data.unwrap().height, Relative(0.8));
@@ -922,11 +944,11 @@ mod tests {
             assert_eq!(w1_layout_data.unwrap().tl.1, Absolute(0));
             assert_eq!(w1_layout_data.unwrap().width, Relative(1.0));
             assert_eq!(w1_layout_data.unwrap().height, Relative(0.5));
-            assert_eq!(w2_layout_data.unwrap().tl.0, Absolute(0));
+            assert_eq!(w2_layout_data.unwrap().tl.0, Absolute(6));
             assert_eq!(w2_layout_data.unwrap().tl.1, Relative(0.5));
             assert_eq!(w2_layout_data.unwrap().width, Relative(1.0));
             assert_eq!(w2_layout_data.unwrap().height, Relative(0.5));
-
+            dbg!(&computed_layout.layout);
             let rendered_layout = computed_layout.render(100, 100);
 
             let w1_layout_data =
@@ -938,9 +960,9 @@ mod tests {
             assert_eq!(w1_layout_data.y, 0);
             assert_eq!(w1_layout_data.width, 100 - 6);
             assert_eq!(w1_layout_data.height, 100 / 2);
-            assert_eq!(w2_layout_data.x, 0);
+            assert_eq!(w2_layout_data.x, 6);
             assert_eq!(w2_layout_data.y, 100 / 2);
-            assert_eq!(w2_layout_data.width, 100);
+            assert_eq!(w2_layout_data.width, 100 - 6);
             assert_eq!(w2_layout_data.height, 100 / 2);
         }
 
@@ -955,8 +977,7 @@ mod tests {
                 .at_coords(Absolute(0), Absolute(5));
             layout
                 .add_widget(&widgets[1])
-                .right_to_last_widget(Absolute(5))
-                .keep_aligned();
+                .right_to_last_widget(Absolute(5));
 
             // [5d       ]
             // [w1][5][w2]
@@ -1008,7 +1029,10 @@ mod tests {
                 .right_to_last_widget(Absolute(5));
             layout
                 .add_widget(&widgets[2])
-                .under_last_widget(Absolute(5));
+                .under_last_widget(Absolute(5))
+                .with_x(0)
+                .with_width(1.0)
+                .shift(5, 0);
             layout
                 .add_widget(&widgets[3])
                 .under_last_widget(Absolute(5))
@@ -1024,7 +1048,7 @@ mod tests {
             let w4_layout_data = unsafe { get_widget(&computed_layout, 3).unwrap() };
 
             // First widget
-            assert_eq!(w1_layout_data.tl, (Absolute(5), Absolute(5))); // Is set to 0 bc alone in col TODO fix
+            assert_eq!(w1_layout_data.tl, (Absolute(5), Absolute(5)));
             assert_eq!(w1_layout_data.width, Relative(0.3));
             assert_eq!(w1_layout_data.height, Relative(0.3));
 
@@ -1034,71 +1058,47 @@ mod tests {
             assert_eq!(w2_layout_data.height, Relative(0.3));
 
             // Third widget
-            assert_eq!(w3_layout_data.tl, (Adaptative(0), Hybrid(10, 0.3))); // Alone on line : top left set to 0
+            assert_eq!(w3_layout_data.tl, (Absolute(5), Hybrid(10, 0.3)));
             assert_eq!(w3_layout_data.width, Relative(1.0));
             assert_eq!(w3_layout_data.height, Relative(0.7));
 
             // Fourth widget
-            assert_eq!(w4_layout_data.tl, (Absolute(0), Hybrid(-20, 1.0)));
+            assert_eq!(w4_layout_data.tl, (Absolute(5), Hybrid(15, 1.0)));
             assert_eq!(w4_layout_data.width, Relative(1.0));
             assert_eq!(w4_layout_data.height, Absolute(20));
 
-            //
-        }
+            let rendered_layout = computed_layout.render(100, 100);
+            let w1_rendered_data =
+                unsafe { get_widget_from_rendered_layout(&rendered_layout, 0).unwrap() };
+            let w2_rendered_data =
+                unsafe { get_widget_from_rendered_layout(&rendered_layout, 1).unwrap() };
+            let w3_rendered_data =
+                unsafe { get_widget_from_rendered_layout(&rendered_layout, 2).unwrap() };
+            let w4_rendered_data =
+                unsafe { get_widget_from_rendered_layout(&rendered_layout, 3).unwrap() };
 
-        #[test]
-        fn keep_aligned_1() {
-            // [w1]
-            // [w2][w3]
-            //     [w4]
+            let line_width = 100 - 10;
+            let line_height = 100 - 15 /*margins*/ - 20 /*last widget height*/;
 
-            let mut layout = LayoutBuilder::new();
-            let mut dg = super::DummyGenerator::new();
-            let widgets = dg.get_n_widgets(4);
+            assert_eq!(w1_rendered_data.x, 5);
+            assert_eq!(w1_rendered_data.y, 5);
+            assert_eq!(w1_rendered_data.width, line_width * 3 / 10);
+            assert_eq!(w1_rendered_data.height, line_height * 3 / 10);
 
-            layout
-                .add_widget(&widgets[0])
-                .at_coords(Absolute(0), Absolute(0))
-                .with_size(Absolute(30), Absolute(40));
-            layout
-                .add_widget(&widgets[1])
-                .under_last_widget(Absolute(0))
-                .keep_aligned();
-            layout
-                .add_widget(&widgets[2])
-                .right_to_last_widget(Absolute(0));
-            layout
-                .add_widget(&widgets[3])
-                .under_last_widget(Absolute(0))
-                .keep_aligned();
+            assert_eq!(w2_rendered_data.x, line_width * 3 / 10 + 10);
+            assert_eq!(w2_rendered_data.y, 5);
+            assert_eq!(w2_rendered_data.width, line_width * 7 / 10);
+            assert_eq!(w2_rendered_data.height, line_height * 3 / 10);
 
-            let computed_layout = layout.process();
+            assert_eq!(w3_rendered_data.x, 5);
+            assert_eq!(w3_rendered_data.y, line_height * 3 / 10 + 10);
+            assert_eq!(w3_rendered_data.width, 95);
+            assert_eq!(w3_rendered_data.height, line_height * 7 / 10);
 
-            let w1_layout_data = unsafe { get_widget(&computed_layout, 0).unwrap() };
-            let w2_layout_data = unsafe { get_widget(&computed_layout, 1).unwrap() };
-            let w3_layout_data = unsafe { get_widget(&computed_layout, 2).unwrap() };
-            let w4_layout_data = unsafe { get_widget(&computed_layout, 3).unwrap() };
-
-            assert_eq!(w1_layout_data.tl, (Absolute(0), Absolute(0)));
-
-            assert_eq!(w2_layout_data.tl, (Absolute(0), Absolute(40)));
-            assert_eq!(w2_layout_data.width, Absolute(30));
-            assert_eq!(w2_layout_data.height, Hybrid(-40, 0.5));
-
-            assert_eq!(w3_layout_data.tl, (Absolute(30), Absolute(40)));
-            assert_eq!(w3_layout_data.width, Hybrid(-30, 1.0));
-            assert_eq!(w3_layout_data.height, Hybrid(-40, 0.5));
-
-            assert_eq!(w4_layout_data.tl, (Absolute(0), Absolute(80)));
-            assert_eq!(w4_layout_data.width, Hybrid(-30, 1.0));
-            assert_eq!(w4_layout_data.height, Hybrid(-40, 0.5));
-
-            // Sizes
-        }
-
-        #[test]
-        fn keep_aligned_2() {
-            todo!("Keep aligned more complex with x and y constraints")
+            assert_eq!(w4_rendered_data.x, 5);
+            assert_eq!(w4_rendered_data.y, 100 - 20);
+            assert_eq!(w4_rendered_data.width, 95);
+            assert_eq!(w4_rendered_data.height, 20);
         }
 
         #[test]
@@ -1108,7 +1108,57 @@ mod tests {
 
         #[test]
         fn in_between() {
-            todo!("3 widgets side to side but the middle one is added last")
+            let mut layout = LayoutBuilder::new();
+            let mut dg = super::DummyGenerator::new();
+            let widgets = dg.get_n_widgets(4);
+
+            layout.add_widget(&widgets[0]);
+            layout
+                .add_widget(&widgets[2])
+                .right_to_last_widget(Absolute(0));
+            layout
+                .add_widget(&widgets[1])
+                .left_to_last_widget(0)
+                .with_width(0.5);
+
+            let computed_layout = layout.process();
+
+            let w1_layout_data = unsafe { get_widget(&computed_layout, 0).unwrap() };
+            let w2_layout_data = unsafe { get_widget(&computed_layout, 1).unwrap() };
+            let w3_layout_data = unsafe { get_widget(&computed_layout, 2).unwrap() };
+
+            assert_eq!(w1_layout_data.tl, (Absolute(0), Absolute(0)));
+            assert_eq!(w2_layout_data.tl, (Relative(0.25), Absolute(0)));
+            assert_eq!(w3_layout_data.tl, (Relative(0.75), Absolute(0)));
+
+            assert_eq!(w1_layout_data.width, Relative(0.25));
+            assert_eq!(w2_layout_data.width, Relative(0.5));
+            assert_eq!(w3_layout_data.width, Relative(0.25));
+
+            assert_eq!(w1_layout_data.height, Relative(1.0));
+            assert_eq!(w2_layout_data.height, Relative(1.0));
+            assert_eq!(w3_layout_data.height, Relative(1.0));
+
+            let rendered_layout = computed_layout.render(100, 100);
+            let w1_rendered_data =
+                unsafe { get_widget_from_rendered_layout(&rendered_layout, 0).unwrap() };
+            let w2_rendered_data =
+                unsafe { get_widget_from_rendered_layout(&rendered_layout, 1).unwrap() };
+            let w3_rendered_data =
+                unsafe { get_widget_from_rendered_layout(&rendered_layout, 2).unwrap() };
+
+            assert_eq!(w1_rendered_data.x, 0);
+            assert_eq!(w2_rendered_data.x, 25);
+            assert_eq!(w3_rendered_data.x, 75);
+            assert_eq!(w1_rendered_data.y, 0);
+            assert_eq!(w2_rendered_data.y, 0);
+            assert_eq!(w3_rendered_data.y, 0);
+            assert_eq!(w1_rendered_data.width, 25);
+            assert_eq!(w2_rendered_data.width, 50);
+            assert_eq!(w3_rendered_data.width, 25);
+            assert_eq!(w1_rendered_data.height, 100);
+            assert_eq!(w2_rendered_data.height, 100);
+            assert_eq!(w3_rendered_data.height, 100);
         }
     }
 }
