@@ -11,6 +11,10 @@ impl cgi::Displayable for CustomWidget {
     fn name(&self) -> String {
         format!("CustomWidget {}", self.data)
     }
+    
+    fn get_changed_chars(&self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>)  {
+        todo!()
+    }
 }
 
 
@@ -26,9 +30,12 @@ fn main() {
     let mut my_widget1 = cgi::Widget::new(my_widget1);
     let mut my_widget2 = cgi::Widget::new(my_widget2);
 
-    let mut layout = cgi::LayoutBuilder::new();
-    layout.add_widget(&my_widget1);
-    layout.add_widget(&my_widget2);
+    let mut layout = cgi::Layout::new();
+    let mut placements = [cgi::layout::WidgetPlacement::default(); 2];
+    cgi::layout::WidgetPlacement::fullscreen().split(2, 1, &mut placements);
+
+    layout.add_widget(&my_widget1, placements[0]);
+    layout.add_widget(&my_widget2, placements[1]);
 
     app.add_layout("MainLayout", layout);
     app.set_layout_behaviour(|(w, h)| {

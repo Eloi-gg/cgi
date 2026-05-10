@@ -5,7 +5,6 @@ pub enum Coordinate {
     Absolute(i32),
     Relative(f32),
     Hybrid(i32, f32),
-    Adaptative(i32),
 }
 
 impl Coordinate {
@@ -14,35 +13,6 @@ impl Coordinate {
             Coordinate::Absolute(a) => *a == 0,
             Coordinate::Relative(r) => *r == 0.0,
             Coordinate::Hybrid(a, r) => *a == 0 && *r == 0.0,
-            Coordinate::Adaptative(_) => false,
-        }
-    }
-
-    pub(crate) fn compute_adaptative_sizes(coords: &[Self]) -> Self {
-        let mut space_to_occupy = Self::Hybrid(0, 1.0); // full size
-        let mut divider = 0;
-        for coord in coords {
-            match coord {
-                Coordinate::Adaptative(offset) => {
-                    divider += 1;
-                    space_to_occupy = space_to_occupy + Self::Absolute(*offset);
-                }
-                Coordinate::Hybrid(..) | Coordinate::Relative(..) => {
-                    space_to_occupy = space_to_occupy - coord.relative_part();
-                }
-                _ => {}
-            }
-        }
-        if divider == 0 {
-            return Self::Hybrid(0, 0.0);
-        }
-
-        if let Coordinate::Hybrid(a, r) = space_to_occupy {
-            let relative = r / divider as f32;
-            let absolute = a / divider as i32;
-            return Self::Hybrid(absolute, relative);
-        } else {
-            unreachable!()
         }
     }
 
@@ -53,7 +23,6 @@ impl Coordinate {
             Absolute(a) => Hybrid(*a, 0.0),
             Relative(r) => Hybrid(0, *r),
             Hybrid(a, r) => Hybrid(*a, *r),
-            Adaptative(o) => Hybrid(*o, 1.0),
         }
     }
 
@@ -64,7 +33,6 @@ impl Coordinate {
             Absolute(a) => *a,
             Relative(_) => 0,
             Hybrid(a, _) => *a,
-            Adaptative(o) => *o,
         };
 
         Absolute(a)
@@ -77,14 +45,6 @@ impl Coordinate {
         x
     }
 
-    pub(crate) fn without_adaptative_offset(&self) -> Self {
-        if let Self::Adaptative(_) = self {
-            Self::Adaptative(0)
-        } else {
-            *self
-        }
-    }
-
     pub(crate) fn compute_at(&self, size: i32) -> i32 {
         use Coordinate::*;
 
@@ -92,7 +52,6 @@ impl Coordinate {
             Absolute(a) => *a,
             Relative(r) => (size as f32 * *r) as i32,
             Hybrid(a, r) => *a + (size as f32 * *r) as i32,
-            Adaptative(o) => *o,
         }
     }
 
@@ -126,10 +85,6 @@ impl Add for Coordinate {
             (Absolute(a), Relative(r)) | (Relative(r), Absolute(a)) => Hybrid(a, r),
             (Absolute(a), Hybrid(b1, b2)) | (Hybrid(b1, b2), Absolute(a)) => Hybrid(a + b1, b2),
             (Relative(a), Hybrid(b1, b2)) | (Hybrid(b1, b2), Relative(a)) => Hybrid(b1, a + b2),
-            (Adaptative(o1), Adaptative(o2)) => Adaptative(o1 + o2),
-            (Adaptative(o), Absolute(a)) | (Absolute(a), Adaptative(o)) => Adaptative(o + a),
-            (Adaptative(o), Relative(_)) | (Relative(_), Adaptative(o)) => Adaptative(o),
-            (Adaptative(o), Hybrid(a, _)) | (Hybrid(a, _), Adaptative(o)) => Adaptative(o + a),
         }
     }
 }
@@ -159,14 +114,6 @@ impl Sub for Coordinate {
             (Hybrid(a1, r1), Absolute(a2)) => Hybrid(a1 - a2, r1),
             (Relative(r1), Hybrid(a2, r2)) => Hybrid(-a2, r1 - r2),
             (Hybrid(a1, r1), Relative(r2)) => Hybrid(a1, r1 - r2),
-            (Adaptative(o1), Adaptative(o2)) => Adaptative(o1 - o2),
-
-            (Adaptative(o), Absolute(a)) => Adaptative(o - a),
-            (Absolute(a), Adaptative(o)) => Adaptative(a - o),
-            (Adaptative(o), Relative(_)) => Adaptative(o),
-            (Relative(_), Adaptative(o)) => Adaptative(o),
-            (Adaptative(o), Hybrid(a, _)) => Adaptative(o - a),
-            (Hybrid(a, _), Adaptative(o)) => Adaptative(a - o),
         }
     }
 }
@@ -185,6 +132,34 @@ impl Neg for Coordinate {
     }
 }
 
+impl std::ops::Div<f32> for Coordinate {
+    type Output = Self;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        use Coordinate::*;
+
+        match self {
+            Absolute(a) => Absolute((a as f32 / rhs) as i32),
+            Relative(r) => Relative(r / rhs),
+            Hybrid(a, r) => Hybrid((a as f32 / rhs) as i32, r / rhs),
+        }
+    }
+}
+
+impl std::ops::Mul<f32> for Coordinate {
+    type Output = Self;
+
+    fn mul(self, rhs: f32) -> Self::Output {
+        use Coordinate::*;
+
+        match self {
+            Absolute(a) => Absolute((a as f32 * rhs) as i32),
+            Relative(r) => Relative(r * rhs),
+            Hybrid(a, r) => Hybrid((a as f32 * rhs) as i32, r * rhs),
+        }
+    }
+}
+
 impl PartialEq for Coordinate {
     fn eq(&self, other: &Self) -> bool {
         use Coordinate::*;
@@ -195,16 +170,13 @@ impl PartialEq for Coordinate {
             (Absolute(a1), Absolute(a2)) => a1 == a2,
             (Relative(r1), Relative(r2)) => r1 == r2,
             (Hybrid(a1, r1), Hybrid(a2, r2)) => a1 == a2 && r1 == r2,
-            (Adaptative(o1), Adaptative(o2)) => o1 == o2,
-
+            
             (Absolute(0), Relative(0.0)) | (Relative(0.0), Absolute(0)) => true,
             (Absolute(0), Hybrid(0, 0.0)) | (Hybrid(0, 0.0), Absolute(0)) => true,
 
             (Absolute(a), Hybrid(a2, 0.0)) | (Hybrid(a2, 0.0), Absolute(a)) => a == a2,
             (Relative(r), Hybrid(0, r2)) | (Hybrid(0, r2), Relative(r)) => r == r2,
 
-            (Adaptative(0), Relative(1.0)) | (Relative(1.0), Adaptative(0)) => true,
-            (Adaptative(o), Hybrid(a, 1.0)) => a == o,
             _ => false,
         }
     }

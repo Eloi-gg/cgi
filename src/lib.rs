@@ -18,6 +18,10 @@ mod tests {
         fn name(&self) -> String {
             format!("CustomWidget {}", self.data)
         }
+        
+        fn get_changed_chars(&self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>)  {
+            todo!()
+        }
     }
 
     // fn dummy_app() -> cgi::Application {
