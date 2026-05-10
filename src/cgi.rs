@@ -4,7 +4,7 @@ pub mod widget;
 pub mod coordinate;
 
 pub use application::Application;
-pub use layout::LayoutBuilder;
+pub use layout::Layout;
 pub use widget::Widget;
 pub use coordinate::Coordinate;
 

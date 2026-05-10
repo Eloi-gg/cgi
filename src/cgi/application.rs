@@ -1,8 +1,9 @@
 use std::collections::HashMap;
-use crate::cgi::layout::LayoutBuilder;
+
+use crate::cgi::layout::Layout;
 
 pub struct Application {
-    pub layouts: HashMap<String, LayoutBuilder>,
+    pub layouts: HashMap<String, Layout>,
     pub current_layout: String,
     pub behavior: fn((u16, u16)) -> String,
 }
@@ -16,7 +17,7 @@ impl Application {
         }
     }
 
-    pub fn add_layout(&mut self, name: &str, layout: LayoutBuilder) {
+    pub fn add_layout(&mut self, name: &str, layout: Layout) {
         self.layouts.insert(name.to_string(), layout);
         if self.current_layout.is_empty() {
             self.current_layout = name.to_string();
@@ -26,14 +27,14 @@ impl Application {
     pub fn print_state(&self) {
         for (name, layout) in &self.layouts {
             println!("Layout: {}", name);
-            for widget in &layout.widgets {
-                println!("  Widget: {:?}", widget.widget);
+            for widget in &layout.layout {
+                println!("  Widget: {:?}", widget.0.widget);
             }
         }
     }
 
     pub fn update(&self) {
-        for widget in self.layouts[&self.current_layout].widgets.iter() {
+        for widget in self.layouts[&self.current_layout].layout.keys() {
             if let Ok(mut dirty) = widget.widget.dirty.lock() {
                 if *dirty {
                     widget.widget.displayable.read().unwrap().display();
