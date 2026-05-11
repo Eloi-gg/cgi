@@ -34,11 +34,11 @@ impl Default for WidgetPlacement {
 }
 
 impl WidgetPlacement {
-    pub fn new(x: Coordinate, y: Coordinate, width: Coordinate, height: Coordinate) -> Self {
+    pub fn new<C: Into<Coordinate>>(x: C, y: C, width: C, height: C) -> Self {
         Self {
-            tl: (x, y),
-            width,
-            height,
+            tl: (x.into(), y.into()),
+            width: width.into(),
+            height: height.into(),
         }
     }
 
@@ -53,7 +53,7 @@ impl WidgetPlacement {
     pub fn shift_top_left<C: Into<Coordinate>>(&self, x: C, y: C) -> Self {
         let x = x.into();
         let y = y.into();
-
+        // TODO : clamp at 0 : no negative coordinates allowed
         Self {
             tl: (self.tl.0 + x, self.tl.1 + y),
             width: self.width - x,
@@ -62,6 +62,7 @@ impl WidgetPlacement {
     }
 
     pub fn shift_bottom_right<C: Into<Coordinate>>(&self, x: C, y: C) -> Self {
+        // TODO : clamp at 0 : no negative coordinates allowed
         Self {
             tl: self.tl,
             width: self.width + x.into(),
@@ -70,6 +71,7 @@ impl WidgetPlacement {
     }
 
     pub fn shift<C: Into<Coordinate>>(&self, x: C, y: C) -> Self {
+        // TODO : clamp at 0 : no negative coordinates allowed
         Self {
             tl: (self.tl.0 + x.into(), self.tl.1 + y.into()),
             width: self.width,
@@ -96,7 +98,12 @@ impl WidgetPlacement {
         let x = x.into();
         let y = y.into();
         
+        // TODO : clamp at 0 : no negative coordinates allowed
         self.shift_top_left(-x, -y).shift_bottom_right(x, y)
+    }
+
+    pub fn get_bottom_right(&self) -> (Coordinate, Coordinate) {
+        (self.tl.0 + self.width, self.tl.1 + self.height)
     }
 }
 
