@@ -49,9 +49,9 @@ impl Coordinate {
         use Coordinate::*;
 
         match self {
-            Absolute(a) => *a,
+            Absolute(a) => (*a).max(0), // clamp to 0
             Relative(r) => (size as f32 * *r) as i32,
-            Hybrid(a, r) => *a + (size as f32 * *r) as i32,
+            Hybrid(a, r) => (*a + (size as f32 * *r) as i32).max(0), // clamp to 0
         }
     }
 
@@ -170,7 +170,7 @@ impl PartialEq for Coordinate {
             (Absolute(a1), Absolute(a2)) => a1 == a2,
             (Relative(r1), Relative(r2)) => r1 == r2,
             (Hybrid(a1, r1), Hybrid(a2, r2)) => a1 == a2 && r1 == r2,
-            
+
             (Absolute(0), Relative(0.0)) | (Relative(0.0), Absolute(0)) => true,
             (Absolute(0), Hybrid(0, 0.0)) | (Hybrid(0, 0.0), Absolute(0)) => true,
 

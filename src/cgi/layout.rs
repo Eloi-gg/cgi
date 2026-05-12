@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 pub struct Layout {
     pub(crate) layout: HashMap<WidgetHdl, WidgetPlacement>,
 }
+
 pub(crate) struct RenderedLayout(pub HashMap<WidgetHdl, ComputedWidgetPlacement>);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -53,7 +54,6 @@ impl WidgetPlacement {
     pub fn shift_top_left<C: Into<Coordinate>>(&self, x: C, y: C) -> Self {
         let x = x.into();
         let y = y.into();
-        // TODO : clamp at 0 : no negative coordinates allowed
         Self {
             tl: (self.tl.0 + x, self.tl.1 + y),
             width: self.width - x,
@@ -62,7 +62,6 @@ impl WidgetPlacement {
     }
 
     pub fn shift_bottom_right<C: Into<Coordinate>>(&self, x: C, y: C) -> Self {
-        // TODO : clamp at 0 : no negative coordinates allowed
         Self {
             tl: self.tl,
             width: self.width + x.into(),
@@ -71,7 +70,6 @@ impl WidgetPlacement {
     }
 
     pub fn shift<C: Into<Coordinate>>(&self, x: C, y: C) -> Self {
-        // TODO : clamp at 0 : no negative coordinates allowed
         Self {
             tl: (self.tl.0 + x.into(), self.tl.1 + y.into()),
             width: self.width,
@@ -97,8 +95,7 @@ impl WidgetPlacement {
     pub fn expand_or_shrink<C: Into<Coordinate>>(&self, x: C, y: C) -> Self {
         let x = x.into();
         let y = y.into();
-        
-        // TODO : clamp at 0 : no negative coordinates allowed
+
         self.shift_top_left(-x, -y).shift_bottom_right(x, y)
     }
 
@@ -117,7 +114,7 @@ impl Layout {
     pub fn with_widget(mut self, widget: &Widget<impl Displayable + 'static>, placement: WidgetPlacement) -> Self {
         self.add_widget(widget, placement);
         self
-    }    
+    }
 
     pub fn add_widget(&mut self, widget: &Widget<impl Displayable + 'static>, placement: WidgetPlacement) {
         let widget_hdl = WidgetHdl { widget: widget.as_dyn() };
@@ -167,7 +164,7 @@ mod tests {
         fn name(&self) -> String {
             format!("CustomWidget {}", self.data)
         }
-        
+
         fn get_changed_chars(&self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>)  {
             todo!()
         }
@@ -282,7 +279,7 @@ use super::super::*;
             let mut placements = [WidgetPlacement::default(); 6];
             let fs = WidgetPlacement::fullscreen().expand_or_shrink(5, 5);
             fs.split(3, 2, &mut placements);
-            
+
             for i in 0..6 {
                 layout.add_widget(&widgets[i], placements[i as usize]);
             }
