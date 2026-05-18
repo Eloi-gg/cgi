@@ -24,13 +24,15 @@ impl OS {
         }
     }
 }
-trait Output {
+
+pub(crate) trait Output {
+    fn flush(&mut self);
     fn place_char(&mut self, x: u16, y: u16, ch: char);
 }
 
 fn render_widget(
-    widget: &dyn super::Displayable,
-    size: crate::cgi::layout::ComputedWidgetPlacement,
+    widget: &dyn super::Displayable, //
+    size: crate::layout::ComputedWidgetPlacement,
     output: &mut dyn Output,
 ) {
     let mut changed_chars = Vec::new();
@@ -40,7 +42,7 @@ fn render_widget(
     }
 }
 
-impl crate::cgi::layout::RenderedLayout {
+impl crate::layout::RenderedLayout {
     fn render_to_output(&self, output: &mut dyn Output) {
         for (widget_hdl, placement) in &self.0 {
             render_widget(
@@ -58,6 +60,8 @@ struct TestOutput<const W: usize, const H: usize> {
 }
 
 impl<const W: usize, const H: usize> Output for TestOutput<W, H> {
+    fn flush(&mut self) {}
+
     fn place_char(&mut self, x: u16, y: u16, ch: char) {
         if x < W as u16 && y < H as u16 {
             self.buffer[y as usize][x as usize] = ch;
@@ -102,16 +106,59 @@ impl<const W: usize, const H: usize> TestOutput<W, H> {
     }
 }
 
+pub(crate) struct LinuxOutput;
+
+impl Output for LinuxOutput {
+    fn place_char(&mut self, x: u16, y: u16, ch: char) {
+        // Move cursor to position (x, y) using ANSI escape code
+        // ESC[row;colH moves cursor to row and col (1-indexed)
+        print!("\x1b[{};{}H{}", y + 1, x + 1, ch);
+
+        // // Flush immediately to show character right away
+        // use std::io::Write;
+        // std::io::stdout().flush().unwrap();
+    }
+
+    fn flush(&mut self) {
+        use std::io::Write;
+        std::io::stdout().flush().unwrap();
+        // clear the screen
+        print!("\x1b[2J\x1b[H");
+    }
+}
+
 #[cfg(test)]
 mod rendering_tests {
     use super::*;
-    use crate::cgi::coordinate::Coordinate::*;
-    use crate::cgi::*;
+    use crate::coordinate::Coordinate::*;
+    use crate::*;
 
     static TESTS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/");
 
     struct FillWidget {
         ch: char,
+    }
+
+    struct FillGenerator {
+        count: u32,
+    }
+
+    impl FillGenerator {
+        fn new() -> Self {
+            Self { count: 0 }
+        }
+
+        fn next(&mut self) -> FillWidget {
+            let dummy = FillWidget {
+                ch: self.count.to_string().chars().next().unwrap(),
+            };
+            self.count += 1;
+            dummy
+        }
+
+        fn get_n_widgets(&mut self, n: u32) -> Vec<Widget<FillWidget>> {
+            (0..n).map(|_| Widget::new(self.next())).collect()
+        }
     }
 
     impl Displayable for FillWidget {
@@ -129,6 +176,10 @@ mod rendering_tests {
                     out.push((x, y, self.ch));
                 }
             }
+        }
+
+        fn on_event(&mut self, event: Event) {
+            todo!()
         }
     }
 
@@ -244,5 +295,38 @@ mod rendering_tests {
 
             assert_match_with_test_file(&rendered_text, &format!("{}_relative_{}x4", i + 4, *x));
         }
+    }
+
+    #[test]
+    fn borders() {
+        use crate::symbols::OutlineStyle;
+        let mut output = TestOutput::<{ 4 * 4 }, 4>::new();
+
+        let mut widgets = FillGenerator::new().get_n_widgets(4);
+        let borders = [
+            OutlineStyle::Normal,
+            OutlineStyle::Rounded,
+            OutlineStyle::Double,
+            OutlineStyle::Thick,
+        ];
+        let mut placements = [WidgetPlacement::new(0, 0, 3, 3); 4];
+        for i in 0..4 {
+            for j in 0..i {
+                placements[j] = placements[j].shift(4, 0);
+            }
+            widgets[i].set_outline(borders[i]);
+        }
+        dbg!(placements);
+        let mut layout = Layout::new();
+        for (widget, placement) in widgets.iter().zip(placements.iter()) {
+            layout.add_widget(widget, *placement);
+        }
+
+        let layout = layout.render(16, 4);
+        output.clear();
+        layout.render_to_output(&mut output);
+        let rendered_text = output.to_string();
+
+        println!("{}", rendered_text);
     }
 }

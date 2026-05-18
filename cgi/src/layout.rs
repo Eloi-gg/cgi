@@ -1,7 +1,7 @@
-use crate::cgi::Displayable;
-use crate::cgi::coordinate::Coordinate;
-use crate::cgi::widget::{Widget, WidgetHdl};
-use std::collections::{HashMap, HashSet};
+use crate::Displayable;
+use crate::coordinate::Coordinate;
+use crate::widget::{Widget, WidgetHdl};
+use std::collections::HashMap;
 
 pub struct Layout {
     pub(crate) layout: HashMap<WidgetHdl, WidgetPlacement>,
@@ -9,14 +9,14 @@ pub struct Layout {
 
 pub(crate) struct RenderedLayout(pub HashMap<WidgetHdl, ComputedWidgetPlacement>);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct WidgetPlacement {
     tl: (Coordinate, Coordinate),
     width: Coordinate,
     height: Coordinate,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub(crate) struct ComputedWidgetPlacement {
     pub x: i32,
     pub y: i32,
@@ -50,6 +50,8 @@ impl WidgetPlacement {
             height: Coordinate::Relative(1.0),
         }
     }
+
+    //TODO: the following functions are half builder pattern half mutators which is confusing
 
     pub fn shift_top_left<C: Into<Coordinate>>(&self, x: C, y: C) -> Self {
         let x = x.into();
@@ -102,6 +104,26 @@ impl WidgetPlacement {
     pub fn get_bottom_right(&self) -> (Coordinate, Coordinate) {
         (self.tl.0 + self.width, self.tl.1 + self.height)
     }
+
+    pub fn with_x<C: Into<Coordinate>>(mut self, x: C) -> Self {
+        self.tl.0 = x.into();
+        self
+    }
+
+    pub fn with_y<C: Into<Coordinate>>(mut self, y: C) -> Self {
+        self.tl.1 = y.into();
+        self
+    }
+
+    pub fn with_width<C: Into<Coordinate>>(mut self, width: C) -> Self {
+        self.width = width.into();
+        self
+    }
+
+    pub fn with_height<C: Into<Coordinate>>(mut self, height: C) -> Self {
+        self.height = height.into();
+        self
+    }
 }
 
 impl Layout {
@@ -124,17 +146,17 @@ impl Layout {
         );
     }
 
-    pub(crate) fn render(self, size_x: i32, size_y: i32) -> RenderedLayout {
+    pub(crate) fn render(&self, size_x: i32, size_y: i32) -> RenderedLayout {
         let mut rendered_layout = HashMap::new();
 
-        for (widget_hdl, layout_data) in self.layout {
+        for (widget_hdl, layout_data) in self.layout.iter() {
             let x = layout_data.tl.0.compute_at(size_x);
             let y = layout_data.tl.1.compute_at(size_y);
             let width = layout_data.width.compute_at(size_x);
             let height = layout_data.height.compute_at(size_y);
 
             rendered_layout.insert(
-                widget_hdl,
+                widget_hdl.clone(),
                 ComputedWidgetPlacement {
                     x,
                     y,
@@ -145,6 +167,18 @@ impl Layout {
         }
 
         RenderedLayout(rendered_layout)
+    }
+}
+
+impl std::fmt::Debug for ComputedWidgetPlacement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({},{}) {}*{}", self.x, self.y, self.width, self.height)
+    }
+}
+
+impl std::fmt::Debug for WidgetPlacement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({:?},{:?}) {:?}*{:?}", self.tl.0, self.tl.1, self.width, self.height)
     }
 }
 
@@ -166,6 +200,10 @@ mod tests {
         }
 
         fn get_changed_chars(&self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>)  {
+            todo!()
+        }
+
+        fn on_event(&mut self, event: crate::Event) {
             todo!()
         }
     }
@@ -210,7 +248,7 @@ mod tests {
     }
 
     mod layout {
-        use crate::cgi::layout;
+        use crate::layout;
 
 use super::super::*;
         use super::Coordinate::*;

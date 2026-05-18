@@ -1,6 +1,6 @@
-use std::ops::{Add, AddAssign, Sub, SubAssign, Neg};
+use std::{fmt::Debug, ops::{Add, AddAssign, Neg, Sub, SubAssign}};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub enum Coordinate {
     Absolute(i32),
     Relative(f32),
@@ -198,5 +198,15 @@ impl From<f32> for Coordinate {
 impl From<(i32, f32)> for Coordinate {
     fn from(value: (i32, f32)) -> Self {
         Coordinate::Hybrid(value.0, value.1)
+    }
+}
+
+impl Debug for Coordinate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Coordinate::Absolute(a) => write!(f, "{}a", a),
+            Coordinate::Relative(r) => write!(f, "{}r", r),
+            Coordinate::Hybrid(a, r) => write!(f, "{}a|{}r", a, r),
+        }
     }
 }

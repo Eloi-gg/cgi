@@ -1,11 +1,22 @@
-use std::collections::HashMap;
+// TODO: this file is a mess of workarounds.
 
-use crate::cgi::layout::Layout;
+use std::io::Write;
+use std::collections::HashMap;
+use crate::rendering::Output;
+
+use crate::{
+    Displayable, Widget,
+    layout::{ComputedWidgetPlacement, Layout, RenderedLayout},
+    widget::WidgetHdl,
+};
 
 pub struct Application {
     pub layouts: HashMap<String, Layout>,
     pub current_layout: String,
     pub behavior: fn((u16, u16)) -> String,
+    pub size: (u16, u16),
+    pub rendered_layout: RenderedLayout,
+    pub output: crate::rendering::LinuxOutput, // TODO : adaptative output (compiles differently depending on OS)
 }
 
 impl Application {
@@ -14,6 +25,9 @@ impl Application {
             layouts: HashMap::new(),
             current_layout: String::new(),
             behavior: |(_w, _h)| "No behavior set!".to_string(),
+            size: (0, 0),
+            rendered_layout: RenderedLayout(HashMap::new()),
+            output: crate::rendering::LinuxOutput,
         }
     }
 
@@ -33,14 +47,29 @@ impl Application {
         }
     }
 
-    pub fn update(&self) {
+    pub fn update(&mut self) {
+        let mut global_changes = Vec::new();
+        let mut local_changes = Vec::new();
         for widget in self.layouts[&self.current_layout].layout.keys() {
-            if let Ok(mut dirty) = widget.widget.dirty.lock() {
-                if *dirty {
-                    widget.widget.displayable.read().unwrap().display();
-                    *dirty = false;
+            if let Ok(mut data) = widget.widget.data.lock() {
+                if (*data).dirty {
+                    let placement = self.get_widget_placement(widget);
+                    widget
+                        .widget
+                        .displayable
+                        .read()
+                        .expect(&format!("{:?} != {:?}", &widget.widget, self.rendered_layout.0.keys().next()))
+                        .get_changed_chars((placement.width as u16, placement.height as u16), &mut local_changes);
+                    (*data).dirty = false;
+                    for (x, y, c) in local_changes.drain(..) {
+                        global_changes.push((x + placement.x as u16, y + placement.y as u16, c));
+                    }
                 }
             }
+        }
+
+        for (x, y, c) in global_changes {
+            self.output.place_char(x, y, c);
         }
     }
 
@@ -50,18 +79,34 @@ impl Application {
 
     fn size_changed(&mut self, new_x: u16, new_y: u16) {
         self.current_layout = (self.behavior)((new_x, new_y));
+        self.size = (new_x, new_y);
+        self.rendered_layout = self.layouts[&self.current_layout].render(self.size.0 as i32, self.size.1 as i32);
+    }
+
+    fn get_widget_placement(
+        &self,
+        widget_hdl: &WidgetHdl,
+    ) -> ComputedWidgetPlacement {
+        self.rendered_layout
+            .0
+            .get(&widget_hdl)
+            .expect(&format!("{:?} != {:?}", &widget_hdl, self.rendered_layout.0.keys().next()))
+            .clone()
     }
 
     pub fn run(mut self) {
         use crossterm::{
             event::{self, Event, KeyCode},
-            terminal::{self, size},
+            terminal::size,
         };
 
         let (cols, rows) = size().unwrap();
         println!("Terminal size: {} cols, {} rows", cols, rows);
 
-        for _ in 0..50 {
+        self.output.flush();
+        self.size_changed(cols, rows);
+
+        for _ in 0..500 {
             if event::poll(std::time::Duration::from_millis(100)).unwrap() {
                 match event::read().unwrap() {
                     Event::Key(key_event) => {
@@ -78,6 +123,8 @@ impl Application {
                 }
             }
             self.update();
+            // print!(".");
+            std::io::stdout().flush().unwrap();
         }
     }
 }

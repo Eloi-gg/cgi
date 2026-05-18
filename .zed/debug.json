@@ -1,0 +1,44 @@
+// Project-local debug tasks
+//
+// For more documentation on how to configure debug tasks,
+// see: https://zed.dev/docs/debugger
+[
+  {
+    "adapter": "CodeLLDB",
+    "label": "test cgi::layout::tests::layout::simple_layout",
+    "build": {
+      "label": "test cgi::layout::tests::layout::simple_layout",
+      "command": "cargo",
+      "args": [
+        "test",
+        "--package",
+        "cgi",
+        "--lib",
+        "--no-run",
+        "--",
+        "cgi::layout::tests::layout::simple_layout",
+        "--exact",
+        "--nocapture",
+        "--include-ignored"
+      ],
+      "env": {
+        "RUSTC_TOOLCHAIN": "/home/eloigg/.rustup/toolchains/stable-x86_64-unknown-linux-gnu"
+      },
+      "cwd": "/home/eloigg/dev/rust/cgi",
+      "use_new_terminal": false,
+      "allow_concurrent_runs": false,
+      "reveal": "always",
+      "reveal_target": "dock",
+      "hide": "never",
+      "tags": [],
+      "shell": "system",
+      "show_summary": false,
+      "show_command": false,
+      "save": "none",
+      "hooks": []
+    },
+    "sourceLanguages": [
+      "rust"
+    ]
+  }
+]
