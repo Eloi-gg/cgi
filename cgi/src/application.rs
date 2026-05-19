@@ -48,29 +48,8 @@ impl Application {
     }
 
     pub fn update(&mut self) {
-        let mut global_changes = Vec::new();
-        let mut local_changes = Vec::new();
-        for widget in self.layouts[&self.current_layout].layout.keys() {
-            if let Ok(mut data) = widget.widget.data.lock() {
-                if (*data).dirty {
-                    let placement = self.get_widget_placement(widget);
-                    widget
-                        .widget
-                        .displayable
-                        .read()
-                        .expect(&format!("{:?} != {:?}", &widget.widget, self.rendered_layout.0.keys().next()))
-                        .get_changed_chars((placement.width as u16, placement.height as u16), &mut local_changes);
-                    (*data).dirty = false;
-                    for (x, y, c) in local_changes.drain(..) {
-                        global_changes.push((x + placement.x as u16, y + placement.y as u16, c));
-                    }
-                }
-            }
-        }
-
-        for (x, y, c) in global_changes {
-            self.output.place_char(x, y, c);
-        }
+        // println!("update");
+        self.rendered_layout.render_to_output(&mut self.output);
     }
 
     pub fn set_layout_behaviour(&mut self, behavior: fn((u16, u16)) -> String) {
@@ -81,17 +60,8 @@ impl Application {
         self.current_layout = (self.behavior)((new_x, new_y));
         self.size = (new_x, new_y);
         self.rendered_layout = self.layouts[&self.current_layout].render(self.size.0 as i32, self.size.1 as i32);
-    }
-
-    fn get_widget_placement(
-        &self,
-        widget_hdl: &WidgetHdl,
-    ) -> ComputedWidgetPlacement {
-        self.rendered_layout
-            .0
-            .get(&widget_hdl)
-            .expect(&format!("{:?} != {:?}", &widget_hdl, self.rendered_layout.0.keys().next()))
-            .clone()
+        self.output.flush();
+        self.update();
     }
 
     pub fn run(mut self) {
@@ -108,7 +78,8 @@ impl Application {
 
         for _ in 0..500 {
             if event::poll(std::time::Duration::from_millis(100)).unwrap() {
-                match event::read().unwrap() {
+                let event = event::read().unwrap();
+                match event {
                     Event::Key(key_event) => {
                         if key_event.code == KeyCode::Esc {
                             break;
@@ -117,12 +88,15 @@ impl Application {
                     }
                     Event::Resize(new_cols, new_rows) => {
                         self.size_changed(new_cols, new_rows);
-                        println!("Resized to: {} cols, {} rows", new_cols, new_rows);
+                        // println!("Resized to: {} cols, {} rows", new_cols, new_rows);
                     }
                     _ => {}
                 }
+                for widget in self.rendered_layout.0.keys() {
+                    widget.widget.displayable.write().unwrap().on_event(event.clone().into());
+                }
             }
-            self.update();
+            // self.update();
             // print!(".");
             std::io::stdout().flush().unwrap();
         }

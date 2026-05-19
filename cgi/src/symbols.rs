@@ -3,7 +3,7 @@ pub enum OutlineStyle {
     Normal,
     Rounded,
     Double,
-    Thick
+    Thick,
 }
 
 impl OutlineStyle {
@@ -20,26 +20,26 @@ impl OutlineStyle {
 // Basically stolen from tui-rs. MIT license.
 
 pub mod block {
-    pub const FULL: &str = "█";
-    pub const SEVEN_EIGHTHS: &str = "▉";
-    pub const THREE_QUARTERS: &str = "▊";
-    pub const FIVE_EIGHTHS: &str = "▋";
-    pub const HALF: &str = "▌";
-    pub const THREE_EIGHTHS: &str = "▍";
-    pub const ONE_QUARTER: &str = "▎";
-    pub const ONE_EIGHTH: &str = "▏";
+    pub const FULL: char = '█';
+    pub const SEVEN_EIGHTHS: char = '▉';
+    pub const THREE_QUARTERS: char = '▊';
+    pub const FIVE_EIGHTHS: char = '▋';
+    pub const HALF: char = '▌';
+    pub const THREE_EIGHTHS: char = '▍';
+    pub const ONE_QUARTER: char = '▎';
+    pub const ONE_EIGHTH: char = '▏';
 
     #[derive(Debug, Clone)]
     pub struct Set {
-        pub full: &'static str,
-        pub seven_eighths: &'static str,
-        pub three_quarters: &'static str,
-        pub five_eighths: &'static str,
-        pub half: &'static str,
-        pub three_eighths: &'static str,
-        pub one_quarter: &'static str,
-        pub one_eighth: &'static str,
-        pub empty: &'static str,
+        pub full: char,
+        pub seven_eighths: char,
+        pub three_quarters: char,
+        pub five_eighths: char,
+        pub half: char,
+        pub three_eighths: char,
+        pub one_quarter: char,
+        pub one_eighth: char,
+        pub empty: char,
     }
 
     pub const THREE_LEVELS: Set = Set {
@@ -50,8 +50,8 @@ pub mod block {
         half: HALF,
         three_eighths: HALF,
         one_quarter: HALF,
-        one_eighth: " ",
-        empty: " ",
+        one_eighth: ' ',
+        empty: ' ',
     };
 
     pub const NINE_LEVELS: Set = Set {
@@ -63,31 +63,31 @@ pub mod block {
         three_eighths: THREE_EIGHTHS,
         one_quarter: ONE_QUARTER,
         one_eighth: ONE_EIGHTH,
-        empty: " ",
+        empty: ' ',
     };
 }
 
 pub mod bar {
-    pub const FULL: &str = "█";
-    pub const SEVEN_EIGHTHS: &str = "▇";
-    pub const THREE_QUARTERS: &str = "▆";
-    pub const FIVE_EIGHTHS: &str = "▅";
-    pub const HALF: &str = "▄";
-    pub const THREE_EIGHTHS: &str = "▃";
-    pub const ONE_QUARTER: &str = "▂";
-    pub const ONE_EIGHTH: &str = "▁";
+    pub const FULL: char = '█';
+    pub const SEVEN_EIGHTHS: char = '▇';
+    pub const THREE_QUARTERS: char = '▆';
+    pub const FIVE_EIGHTHS: char = '▅';
+    pub const HALF: char = '▄';
+    pub const THREE_EIGHTHS: char = '▃';
+    pub const ONE_QUARTER: char = '▂';
+    pub const ONE_EIGHTH: char = '▁';
 
     #[derive(Debug, Clone)]
     pub struct Set {
-        pub full: &'static str,
-        pub seven_eighths: &'static str,
-        pub three_quarters: &'static str,
-        pub five_eighths: &'static str,
-        pub half: &'static str,
-        pub three_eighths: &'static str,
-        pub one_quarter: &'static str,
-        pub one_eighth: &'static str,
-        pub empty: &'static str,
+        pub full: char,
+        pub seven_eighths: char,
+        pub three_quarters: char,
+        pub five_eighths: char,
+        pub half: char,
+        pub three_eighths: char,
+        pub one_quarter: char,
+        pub one_eighth: char,
+        pub empty: char,
     }
 
     pub const THREE_LEVELS: Set = Set {
@@ -98,8 +98,8 @@ pub mod bar {
         half: HALF,
         three_eighths: HALF,
         one_quarter: HALF,
-        one_eighth: " ",
-        empty: " ",
+        one_eighth: ' ',
+        empty: ' ',
     };
 
     pub const NINE_LEVELS: Set = Set {
@@ -111,72 +111,72 @@ pub mod bar {
         three_eighths: THREE_EIGHTHS,
         one_quarter: ONE_QUARTER,
         one_eighth: ONE_EIGHTH,
-        empty: " ",
+        empty: ' ',
     };
 }
 
 pub mod line {
-    pub const VERTICAL: &str = "│";
-    pub const DOUBLE_VERTICAL: &str = "║";
-    pub const THICK_VERTICAL: &str = "┃";
+    pub const VERTICAL: char = '│';
+    pub const DOUBLE_VERTICAL: char = '║';
+    pub const THICK_VERTICAL: char = '┃';
 
-    pub const HORIZONTAL: &str = "─";
-    pub const DOUBLE_HORIZONTAL: &str = "═";
-    pub const THICK_HORIZONTAL: &str = "━";
+    pub const HORIZONTAL: char = '─';
+    pub const DOUBLE_HORIZONTAL: char = '═';
+    pub const THICK_HORIZONTAL: char = '━';
 
-    pub const TOP_RIGHT: &str = "┐";
-    pub const ROUNDED_TOP_RIGHT: &str = "╮";
-    pub const DOUBLE_TOP_RIGHT: &str = "╗";
-    pub const THICK_TOP_RIGHT: &str = "┓";
+    pub const TOP_RIGHT: char = '┐';
+    pub const ROUNDED_TOP_RIGHT: char = '╮';
+    pub const DOUBLE_TOP_RIGHT: char = '╗';
+    pub const THICK_TOP_RIGHT: char = '┓';
 
-    pub const TOP_LEFT: &str = "┌";
-    pub const ROUNDED_TOP_LEFT: &str = "╭";
-    pub const DOUBLE_TOP_LEFT: &str = "╔";
-    pub const THICK_TOP_LEFT: &str = "┏";
+    pub const TOP_LEFT: char = '┌';
+    pub const ROUNDED_TOP_LEFT: char = '╭';
+    pub const DOUBLE_TOP_LEFT: char = '╔';
+    pub const THICK_TOP_LEFT: char = '┏';
 
-    pub const BOTTOM_RIGHT: &str = "┘";
-    pub const ROUNDED_BOTTOM_RIGHT: &str = "╯";
-    pub const DOUBLE_BOTTOM_RIGHT: &str = "╝";
-    pub const THICK_BOTTOM_RIGHT: &str = "┛";
+    pub const BOTTOM_RIGHT: char = '┘';
+    pub const ROUNDED_BOTTOM_RIGHT: char = '╯';
+    pub const DOUBLE_BOTTOM_RIGHT: char = '╝';
+    pub const THICK_BOTTOM_RIGHT: char = '┛';
 
-    pub const BOTTOM_LEFT: &str = "└";
-    pub const ROUNDED_BOTTOM_LEFT: &str = "╰";
-    pub const DOUBLE_BOTTOM_LEFT: &str = "╚";
-    pub const THICK_BOTTOM_LEFT: &str = "┗";
+    pub const BOTTOM_LEFT: char = '└';
+    pub const ROUNDED_BOTTOM_LEFT: char = '╰';
+    pub const DOUBLE_BOTTOM_LEFT: char = '╚';
+    pub const THICK_BOTTOM_LEFT: char = '┗';
 
-    pub const VERTICAL_LEFT: &str = "┤";
-    pub const DOUBLE_VERTICAL_LEFT: &str = "╣";
-    pub const THICK_VERTICAL_LEFT: &str = "┫";
+    pub const VERTICAL_LEFT: char = '┤';
+    pub const DOUBLE_VERTICAL_LEFT: char = '╣';
+    pub const THICK_VERTICAL_LEFT: char = '┫';
 
-    pub const VERTICAL_RIGHT: &str = "├";
-    pub const DOUBLE_VERTICAL_RIGHT: &str = "╠";
-    pub const THICK_VERTICAL_RIGHT: &str = "┣";
+    pub const VERTICAL_RIGHT: char = '├';
+    pub const DOUBLE_VERTICAL_RIGHT: char = '╠';
+    pub const THICK_VERTICAL_RIGHT: char = '┣';
 
-    pub const HORIZONTAL_DOWN: &str = "┬";
-    pub const DOUBLE_HORIZONTAL_DOWN: &str = "╦";
-    pub const THICK_HORIZONTAL_DOWN: &str = "┳";
+    pub const HORIZONTAL_DOWN: char = '┬';
+    pub const DOUBLE_HORIZONTAL_DOWN: char = '╦';
+    pub const THICK_HORIZONTAL_DOWN: char = '┳';
 
-    pub const HORIZONTAL_UP: &str = "┴";
-    pub const DOUBLE_HORIZONTAL_UP: &str = "╩";
-    pub const THICK_HORIZONTAL_UP: &str = "┻";
+    pub const HORIZONTAL_UP: char = '┴';
+    pub const DOUBLE_HORIZONTAL_UP: char = '╩';
+    pub const THICK_HORIZONTAL_UP: char = '┻';
 
-    pub const CROSS: &str = "┼";
-    pub const DOUBLE_CROSS: &str = "╬";
-    pub const THICK_CROSS: &str = "╋";
+    pub const CROSS: char = '┼';
+    pub const DOUBLE_CROSS: char = '╬';
+    pub const THICK_CROSS: char = '╋';
 
     #[derive(Debug, Clone)]
     pub struct Set {
-        pub vertical: &'static str,
-        pub horizontal: &'static str,
-        pub top_right: &'static str,
-        pub top_left: &'static str,
-        pub bottom_right: &'static str,
-        pub bottom_left: &'static str,
-        pub vertical_left: &'static str,
-        pub vertical_right: &'static str,
-        pub horizontal_down: &'static str,
-        pub horizontal_up: &'static str,
-        pub cross: &'static str,
+        pub vertical: char,
+        pub horizontal: char,
+        pub top_right: char,
+        pub top_left: char,
+        pub bottom_right: char,
+        pub bottom_left: char,
+        pub vertical_left: char,
+        pub vertical_right: char,
+        pub horizontal_down: char,
+        pub horizontal_up: char,
+        pub cross: char,
     }
 
     pub const NORMAL: Set = Set {
@@ -228,16 +228,69 @@ pub mod line {
         horizontal_up: THICK_HORIZONTAL_UP,
         cross: THICK_CROSS,
     };
+
+    impl Set {
+        pub(crate) fn render(
+            &self,
+            placement: crate::layout::ComputedWidgetPlacement,
+            output: &mut Vec<(u16, u16, char)>,
+        ) {
+            dbg!(placement);
+            for x in 1..(placement.width - 1) {
+                let x = x + placement.x;
+
+                output.push((x as u16, placement.y as u16, self.horizontal));
+                output.push((
+                    x as u16,
+                    (placement.y + placement.height - 1) as u16,
+                    self.horizontal,
+                ));
+            }
+
+            for y in 1..(placement.height - 1) {
+                let y = y + placement.y;
+
+                output.push((placement.x as u16, y as u16, self.vertical));
+                output.push((
+                    (placement.x + placement.width - 1) as u16,
+                    y as u16,
+                    self.vertical,
+                ));
+            }
+
+            output.push((placement.x as u16, placement.y as u16, self.top_left));
+            output.push((
+                (placement.x + placement.width - 1) as u16,
+                placement.y as u16,
+                self.top_right,
+            ));
+            output.push((
+                placement.x as u16,
+                (placement.y + placement.height - 1) as u16,
+                self.bottom_left,
+            ));
+            output.push((
+                (placement.x + placement.width - 1) as u16,
+                (placement.y + placement.height - 1) as u16,
+                self.bottom_right,
+            ));
+        }
+    }
 }
 
 #[cfg(test)]
 mod outlines {
-    use super::*;
+    use crate::{widget::WidgetBuilder, *};
+    use crate::test::FillWidget;
+    use super::OutlineStyle;
 
     #[test]
-    fn normal_3x3() {
-        let outline = super::line::NORMAL;
+    fn normal_variable_size() {
+        let widget = &WidgetBuilder::new(FillWidget::new('#')).with_outline(OutlineStyle::Normal).build();
 
-
+        for size in [3, 5, 10, 21] {
+            let rendered_text = crate::test::get_single_widget_rendered_text(widget, (size, size / 3));
+            println!("{}", rendered_text);
+        }
     }
 }

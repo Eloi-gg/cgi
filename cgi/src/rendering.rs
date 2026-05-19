@@ -1,5 +1,7 @@
 use core::panic;
 
+use crate::layout::ComputedWidgetPlacement;
+
 enum OS {
     Windows,
     Linux,
@@ -30,31 +32,78 @@ pub(crate) trait Output {
     fn place_char(&mut self, x: u16, y: u16, ch: char);
 }
 
-fn render_widget(
-    widget: &dyn super::Displayable, //
-    size: crate::layout::ComputedWidgetPlacement,
-    output: &mut dyn Output,
-) {
-    let mut changed_chars = Vec::new();
-    widget.get_changed_chars((size.width as u16, size.height as u16), &mut changed_chars);
-    for (x, y, ch) in changed_chars {
-        output.place_char(size.x as u16 + x, size.y as u16 + y, ch);
-    }
-}
+// fn render_widget(
+//     widget: &dyn super::Displayable, //
+//     size: crate::layout::ComputedWidgetPlacement,
+//     output: &mut dyn Output,
+// ) {
+//     let mut changed_chars = Vec::new();
+//     widget.get_changed_chars((size.width as u16, size.height as u16), &mut changed_chars);
+//     for (x, y, ch) in changed_chars {
+//         output.place_char(size.x as u16 + x, size.y as u16 + y, ch);
+//     }
+// }
 
 impl crate::layout::RenderedLayout {
-    fn render_to_output(&self, output: &mut dyn Output) {
-        for (widget_hdl, placement) in &self.0 {
-            render_widget(
-                &*widget_hdl.widget.displayable.read().unwrap(),
-                *placement,
-                output,
-            );
+    pub(crate) fn render_to_output(&self, output: &mut dyn Output) {
+        let mut global_changes = Vec::new();
+        let mut local_changes = Vec::new();
+
+        for (widget, placement) in self.0.iter() {
+            if let Ok(mut data) = widget.widget.data.lock() {
+                if (*data).dirty {
+                    //TODO: do we really need this
+                    let inside_placement = if let Some(ref outline) = (*data).outline {
+                        outline.render(*placement, &mut local_changes);
+                        for (x, y, c) in local_changes.drain(..) {
+                            global_changes.push((
+                                x + placement.x as u16,
+                                y + placement.y as u16,
+                                c,
+                            ));
+                        }
+                        ComputedWidgetPlacement {
+                            x: placement.x + 1,
+                            y: placement.y + 1,
+                            width: placement.width - 2,
+                            height: placement.height - 2,
+                        }
+                    } else {
+                        *placement
+                    };
+                    if inside_placement.width > 0 && inside_placement.height > 0 {
+                        widget
+                            .widget
+                            .displayable
+                            .write()
+                            .unwrap()
+                            .get_changed_chars(
+                                (
+                                    inside_placement.width as u16,
+                                    inside_placement.height as u16,
+                                ),
+                                &mut local_changes,
+                            );
+                        // (*data).dirty = false;
+                        for (x, y, c) in local_changes.drain(..) {
+                            global_changes.push((
+                                x + inside_placement.x as u16,
+                                y + inside_placement.y as u16,
+                                c,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        for (x, y, c) in global_changes {
+            output.place_char(x, y, c);
         }
     }
 }
 
-struct TestOutput<const W: usize, const H: usize> {
+pub(crate) struct TestOutput<const W: usize, const H: usize> {
     buffer: [[char; W]; H],
     current_size: (usize, usize),
 }
@@ -72,14 +121,14 @@ impl<const W: usize, const H: usize> Output for TestOutput<W, H> {
 }
 
 impl<const W: usize, const H: usize> TestOutput<W, H> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             buffer: [[' '; W]; H],
             current_size: (W, H),
         }
     }
 
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         let mut r = String::new();
         let return_char = OS::get().return_char();
         for row_i in 0..self.current_size.1 {
@@ -93,11 +142,11 @@ impl<const W: usize, const H: usize> TestOutput<W, H> {
         r
     }
 
-    fn change_size(&mut self, new_size: (usize, usize)) {
+    pub fn change_size(&mut self, new_size: (usize, usize)) {
         self.current_size = new_size;
     }
 
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         for y in 0..self.current_size.1 {
             for x in 0..self.current_size.0 {
                 self.buffer[y][x] = ' ';
@@ -170,7 +219,7 @@ mod rendering_tests {
             format!("FillWidget '{}'", self.ch)
         }
 
-        fn get_changed_chars(&self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
+        fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
             for y in 0..size.1 {
                 for x in 0..size.0 {
                     out.push((x, y, self.ch));

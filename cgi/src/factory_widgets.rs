@@ -48,9 +48,11 @@ pub mod text {
 
     impl TextBox {
         pub fn new(text: &str, listener: Listener<Self>) -> Self {
+            let text: Vec<char> = text.chars().collect();
+            let changed_chars: Vec<usize> = (0..text.len()).collect();
             Self {
-                text: text.chars().collect(),
-                changed_chars: (0..text.len()).collect(),
+                text,
+                changed_chars,
                 size: (0, 0),
                 listener,
             }
@@ -63,6 +65,7 @@ pub mod text {
                     self.changed_chars.push(i);
                 }
             }
+            println!("Changed chars: {}", self.changed_chars.len());
         }
     }
 
@@ -75,21 +78,24 @@ pub mod text {
             todo!()
         }
 
-        fn get_changed_chars(&self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
+        fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
             if size.0 * size.1 == 0 {
                 return;
             }
-            for i in self.changed_chars.iter() {
-                let line = *i as u16 / size.0;
-                let column = *i as u16 % size.0;
+            for i in self.changed_chars.drain(..) {
+                let line = i as u16 / size.0;
+                let column = i as u16 % size.0;
                 if line > size.1 {
                     break;
                 }
-                out.push((column, line, self.text[*i]));
+                out.push((column, line, self.text[i]));
             }
         }
 
         fn on_event(&mut self, event: crate::Event) {
+            if let crate::Event::Resize(w, h) = event {
+                self.changed_chars = (0..self.text.len()).collect();
+            }
             if self.listener.is_listening_for(event) {
                 (self.listener.on_event)(event, self);
             }

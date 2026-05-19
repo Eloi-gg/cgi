@@ -15,7 +15,7 @@ impl Displayable for CustomWidget {
         format!("CustomWidget {}", self.data)
     }
 
-    fn get_changed_chars(&self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
+    fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
         todo!()
     }
 
@@ -39,7 +39,7 @@ fn scenario_1() {
         à décharge électrostatique équivalente, sans vent ni relief et à moins de conditions de propagation anormale du son dans l'air[2].";
 
     let text_widget = WidgetBuilder::new(TextBox::new(text1, Listener::empty()))
-        .with_outline(cgi::symbols::OutlineStyle::Rounded)
+        .with_outline(cgi::symbols::OutlineStyle::Double)
         .build();
     let text_widget2 = WidgetBuilder::new(TextBox::new(text2, Listener::empty()))
         .with_outline(cgi::symbols::OutlineStyle::Rounded)

@@ -183,56 +183,9 @@ impl std::fmt::Debug for WidgetPlacement {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-
-    struct Dummy {
-        data: u32,
-    }
-
-    impl Displayable for Dummy {
-        fn display(&self) {
-            println!("Displaying CustomWidget with data: {}", self.data);
-        }
-
-        fn name(&self) -> String {
-            format!("CustomWidget {}", self.data)
-        }
-
-        fn get_changed_chars(&self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>)  {
-            todo!()
-        }
-
-        fn on_event(&mut self, event: crate::Event) {
-            todo!()
-        }
-    }
-
-    impl Dummy {
-        fn new(data: u32) -> Self {
-            Self { data }
-        }
-    }
-
-    struct DummyGenerator {
-        count: u32,
-    }
-
-    impl DummyGenerator {
-        fn new() -> Self {
-            Self { count: 0 }
-        }
-
-        fn next(&mut self) -> Dummy {
-            let dummy = Dummy::new(self.count);
-            self.count += 1;
-            dummy
-        }
-
-        fn get_n_widgets(&mut self, n: u32) -> Vec<Widget<Dummy>> {
-            (0..n).map(|_| Widget::new(self.next())).collect()
-        }
-    }
+    use crate::test::{Dummy, DummyGenerator};
 
     #[test]
     fn coordinate_addition() {
