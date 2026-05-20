@@ -230,67 +230,89 @@ pub mod line {
     };
 
     impl Set {
-        pub(crate) fn render(
-            &self,
-            placement: crate::layout::ComputedWidgetPlacement,
-            output: &mut Vec<(u16, u16, char)>,
-        ) {
-            dbg!(placement);
-            for x in 1..(placement.width - 1) {
-                let x = x + placement.x;
-
-                output.push((x as u16, placement.y as u16, self.horizontal));
-                output.push((
-                    x as u16,
-                    (placement.y + placement.height - 1) as u16,
-                    self.horizontal,
-                ));
+        pub(crate) fn render(&self, size: (u16, u16), output: &mut Vec<(u16, u16, char)>) {
+            for x in 1..(size.0 - 1) {
+                output.push((x, 0, self.horizontal));
+                output.push((x, size.1 - 1, self.horizontal));
             }
 
-            for y in 1..(placement.height - 1) {
-                let y = y + placement.y;
-
-                output.push((placement.x as u16, y as u16, self.vertical));
-                output.push((
-                    (placement.x + placement.width - 1) as u16,
-                    y as u16,
-                    self.vertical,
-                ));
+            for y in 1..(size.1 - 1) {
+                output.push((0, y, self.vertical));
+                output.push((size.0 - 1, y, self.vertical));
             }
 
-            output.push((placement.x as u16, placement.y as u16, self.top_left));
-            output.push((
-                (placement.x + placement.width - 1) as u16,
-                placement.y as u16,
-                self.top_right,
-            ));
-            output.push((
-                placement.x as u16,
-                (placement.y + placement.height - 1) as u16,
-                self.bottom_left,
-            ));
-            output.push((
-                (placement.x + placement.width - 1) as u16,
-                (placement.y + placement.height - 1) as u16,
-                self.bottom_right,
-            ));
+            output.push((0, 0, self.top_left));
+            output.push((size.0 - 1, 0, self.top_right));
+            output.push((0, size.1 - 1, self.bottom_left));
+            output.push((size.0 - 1, size.1 - 1, self.bottom_right));
         }
     }
 }
 
 #[cfg(test)]
 mod outlines {
-    use crate::{widget::WidgetBuilder, *};
-    use crate::test::FillWidget;
     use super::OutlineStyle;
+    use crate::factory_widgets::Listener;
+    use crate::rendering::Output;
+    use crate::test::FillWidget;
+    use crate::{widget::WidgetBuilder, *};
 
     #[test]
     fn normal_variable_size() {
-        let widget = &WidgetBuilder::new(FillWidget::new('#')).with_outline(OutlineStyle::Normal).build();
+        let widget = &WidgetBuilder::new(FillWidget::new('#'))
+            .with_outline(OutlineStyle::Rounded)
+            .build();
 
-        for size in [3, 5, 10, 21] {
-            let rendered_text = crate::test::get_single_widget_rendered_text(widget, (size, size / 3));
+        for size in [3, 6, 10, 21] {
+            let rendered_text =
+                crate::test::get_single_widget_rendered_text(widget, (size, size / 3));
             println!("{}", rendered_text);
         }
+    }
+
+    #[test]
+    fn long_text() {
+        let text_box = crate::factory_widgets::text::TextBox::new(
+            self::test::strings::lorem_ipsum_long(),
+            Listener::empty(),
+        );
+        let widget = WidgetBuilder::new(text_box)
+            .with_outline(OutlineStyle::Thick)
+            .build();
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
+        println!("{}", rendered_text);
+        crate::test::assert_match_with_test_file(&rendered_text, "7_borders.txt");
+    }
+
+    #[test]
+    fn offset_long_text() {
+        use crate::*;
+        let mut output = crate::rendering::TestOutput::<48, 16>::new();
+        let text_box = crate::factory_widgets::text::TextBox::new(
+            self::test::strings::lorem_ipsum_long(),
+            Listener::empty(),
+        );
+        // let simpler_widget = WidgetBuilder::new(FillWidget::new('#'))
+        //     .with_outline(OutlineStyle::Thick)
+        //     .build();
+        let widget = WidgetBuilder::new(text_box)
+            .with_outline(OutlineStyle::Thick)
+            .build();
+
+        output.flush();
+        // let placement = WidgetPlacement::new(x, 0, 16, 8);
+        let placement = WidgetPlacement::fullscreen()
+            .expand_or_shrink(-0.25, -0.25)
+            .shift_bottom_right(-0.2, -0.2);
+        let layout = Layout::new().with_widget(&widget, placement);
+
+        let layout = layout.render(48, 16);
+        layout.render_to_output(&mut output);
+        dbg!(placement);
+        dbg!(layout.0.iter().next().unwrap());
+        let rendered_text = output.to_string();
+        println!("{}", rendered_text.trim_end());
+
+        // crate::test::assert_match_with_test_file(&rendered_text, "7_borders.txt");
     }
 }

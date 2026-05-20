@@ -82,13 +82,21 @@ pub mod text {
             if size.0 * size.1 == 0 {
                 return;
             }
+            let mut line: u16 = 0;
+            let mut column: u16 = 0;
             for i in self.changed_chars.drain(..) {
-                let line = i as u16 / size.0;
-                let column = i as u16 % size.0;
-                if line > size.1 {
+                if line >= size.1 {
                     break;
                 }
-                out.push((column, line, self.text[i]));
+                if self.text[i] == '\n' {
+                    line += 1;
+                    column = 0;
+                    continue;
+                }
+                out.push((column as u16, line as u16, self.text[i]));
+                column = column + 1;
+                line += column / size.0; // Only increment line when column wraps around
+                column %= size.0;
             }
         }
 

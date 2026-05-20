@@ -51,10 +51,10 @@ impl crate::layout::RenderedLayout {
 
         for (widget, placement) in self.0.iter() {
             if let Ok(mut data) = widget.widget.data.lock() {
+                    //TODO: do we really need `dirty`?
                 if (*data).dirty {
-                    //TODO: do we really need this
                     let inside_placement = if let Some(ref outline) = (*data).outline {
-                        outline.render(*placement, &mut local_changes);
+                        outline.render((placement.width as u16, placement.height as u16), &mut local_changes);
                         for (x, y, c) in local_changes.drain(..) {
                             global_changes.push((
                                 x + placement.x as u16,

@@ -133,13 +133,15 @@ mod inner {
         }
     }
 
-    pub fn get_single_widget_rendered_text(widget: &Widget<impl Displayable + 'static>, size: (i32, i32)) -> String {
+    pub fn get_single_widget_rendered_text(
+        widget: &Widget<impl Displayable + 'static>,
+        size: (i32, i32),
+    ) -> String {
         use crate::*;
         let mut output = crate::rendering::TestOutput::<100, 100>::new();
         output.change_size((size.0 as usize, size.1 as usize));
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(widget, placement);
-
 
         let layout = layout.render(size.0, size.1);
         layout.render_to_output(&mut output);
@@ -162,13 +164,36 @@ mod inner {
     /// assert_match_with_test_file(&output.to_string(), "expected_output");
     /// ```
     pub fn assert_match_with_test_file(text: &str, file_name: &str) {
-        let tests_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/");
-        let extension = if file_name.ends_with(".txt") { "" } else { ".txt" };
-        let expected_result = std::fs::File::open(format!("{}/{}{}", tests_dir, file_name, extension))
-            .expect(&format!("Failed to open test file: {}{}{}", tests_dir, file_name, extension));
-        let expected_result = std::io::read_to_string(expected_result)
-            .expect("Failed to read test file content");
-        assert_eq!(text, expected_result);
+        let tests_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/");
+        let extension = if file_name.ends_with(".txt") {
+            ""
+        } else {
+            ".txt"
+        };
+        let expected_result =
+            std::fs::File::open(format!("{}/{}{}", tests_dir, file_name, extension)).expect(
+                &format!(
+                    "Failed to open test file: {}{}{}",
+                    tests_dir, file_name, extension
+                ),
+            );
+        let expected_result =
+            std::io::read_to_string(expected_result).expect("Failed to read test file content");
+        assert_eq!(text.trim_end(), expected_result.trim_end());
+    }
+
+    pub mod strings {
+        static mut LOREM_IPSUM_LONG: String = String::new();
+
+        pub fn lorem_ipsum_long() -> &'static str {
+            unsafe {
+                if LOREM_IPSUM_LONG.is_empty() {
+                    LOREM_IPSUM_LONG =
+                        "Lorem ipsum dolor sit amet, consectetur adipiscing elit\n".repeat(15);
+                }
+                return LOREM_IPSUM_LONG.as_str()
+            }
+        }
     }
 }
 

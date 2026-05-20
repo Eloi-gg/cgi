@@ -29,14 +29,14 @@ fn scenario_1() {
 
     let mut app = cgi::Application::new();
     let text1 = " Hello, World! \n
-        Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
-        Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
-        Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
         ";
-    let text2 = "Le tonnerre est un son produit par l'expansion brutale de la fine colonne d'air qui a été chauffée très rapidement
-        par la foudre au cours d'un orage[1]. Il se manifeste sous la forme d'un claquement sec ou d'un roulement sourd dont l'intensité
-        est d'autant plus forte que le phénomène de foudre qui le provoque est plus proche du lieu où se situe l'observateur,
-        à décharge électrostatique équivalente, sans vent ni relief et à moins de conditions de propagation anormale du son dans l'air[2].";
+    let text2 = "Le tonnerre est un son produit par l'expansion brutale de la fine colonne d'air qui a été chauffée très rapidement\
+ par la foudre au cours d'un orage[1]. \nIl se manifeste sous la forme d'un claquement sec ou d'un roulement sourd dont l'intensité\
+ est d'autant plus forte que le phénomène de foudre qui le provoque est plus proche du lieu où se situe l'observateur,\
+ à décharge électrostatique équivalente, sans vent ni relief et à moins de conditions de propagation anormale du son dans l'air[2].";
 
     let text_widget = WidgetBuilder::new(TextBox::new(text1, Listener::empty()))
         .with_outline(cgi::symbols::OutlineStyle::Double)
