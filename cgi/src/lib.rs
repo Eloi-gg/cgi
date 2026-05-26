@@ -36,6 +36,14 @@ pub trait Displayable {
     fn display(&self); // TODO delete
     fn name(&self) -> String; // TODO delete
     fn on_event(&mut self, event: Event) { let _ = event; }
+
+    /// Returns the changed characters as a list of `(column, line, char)` tuples.
+    /// The coordinates are relative to the widget. (0,0) is the top-left corner.
+    ///
+    /// # Arguments
+    ///
+    /// * `size` - The size of the widget.
+    /// * `out` - The output vector to store the changed characters.
     fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) ;
 }
 

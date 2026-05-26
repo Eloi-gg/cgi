@@ -38,10 +38,10 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
  est d'autant plus forte que le phénomène de foudre qui le provoque est plus proche du lieu où se situe l'observateur,\
  à décharge électrostatique équivalente, sans vent ni relief et à moins de conditions de propagation anormale du son dans l'air[2].";
 
-    let text_widget = WidgetBuilder::new(TextBox::new(text1, Listener::empty()))
+    let text_widget = WidgetBuilder::new(TextBox::new(text1, Listener::empty(), factory_widgets::text::TextAlign::Left))
         .with_outline(cgi::symbols::OutlineStyle::Double)
         .build();
-    let text_widget2 = WidgetBuilder::new(TextBox::new(text2, Listener::empty()))
+    let text_widget2 = WidgetBuilder::new(TextBox::new(text2, Listener::empty(), factory_widgets::text::TextAlign::Left))
         .with_outline(cgi::symbols::OutlineStyle::Rounded)
         .build();
 
@@ -57,8 +57,23 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
     app.run();
 }
 
+fn scenario_2() {
+    use cgi::factory_widgets::{Listener, text::*};
+
+    let mut app = cgi::Application::new();
+
+    let title = WidgetBuilder::new(TextBox::new("Title", Listener::empty(), factory_widgets::text::TextAlign::Left))
+        .build();
+    let mut layout = cgi::Layout::new();
+    layout.add_widget(&title, WidgetPlacement::fullscreen());
+    app.set_layout_behaviour(|(w, h)| "MainLayout".to_string());
+    app.add_layout("MainLayout", layout);
+
+    app.run();
+}
+
 fn main() {
-    scenario_1();
+    scenario_2();
     return;
 
     let mut app = cgi::Application::new();

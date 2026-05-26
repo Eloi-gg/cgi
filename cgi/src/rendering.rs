@@ -181,69 +181,8 @@ mod rendering_tests {
     use super::*;
     use crate::coordinate::Coordinate::*;
     use crate::*;
-
-    static TESTS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/");
-
-    struct FillWidget {
-        ch: char,
-    }
-
-    struct FillGenerator {
-        count: u32,
-    }
-
-    impl FillGenerator {
-        fn new() -> Self {
-            Self { count: 0 }
-        }
-
-        fn next(&mut self) -> FillWidget {
-            let dummy = FillWidget {
-                ch: self.count.to_string().chars().next().unwrap(),
-            };
-            self.count += 1;
-            dummy
-        }
-
-        fn get_n_widgets(&mut self, n: u32) -> Vec<Widget<FillWidget>> {
-            (0..n).map(|_| Widget::new(self.next())).collect()
-        }
-    }
-
-    impl Displayable for FillWidget {
-        fn display(&self) {
-            // No-op for testing
-        }
-
-        fn name(&self) -> String {
-            format!("FillWidget '{}'", self.ch)
-        }
-
-        fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
-            for y in 0..size.1 {
-                for x in 0..size.0 {
-                    out.push((x, y, self.ch));
-                }
-            }
-        }
-
-        fn on_event(&mut self, event: Event) {
-            todo!()
-        }
-    }
-
-    fn assert_match_with_test_file(text: &str, file_name: &str) {
-        let extension = if file_name.ends_with(".txt") {
-            ""
-        } else {
-            ".txt"
-        };
-        let expected_result =
-            std::fs::File::open(format!("{}/{}{}", TESTS_DIR, file_name, extension)).unwrap();
-        let expected_result = std::io::read_to_string(expected_result).unwrap();
-        assert_eq!(text, expected_result);
-    }
-
+    use crate::test::*;
+    
     #[test]
     fn offsets_10_x_10() {
         let mut output = TestOutput::<10, 10>::new();

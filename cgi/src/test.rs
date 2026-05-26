@@ -4,8 +4,12 @@
 
 #[cfg(test)]
 mod inner {
+    pub(crate) use crate::rendering::TestOutput;
+
     use crate::{widget::Widget, Displayable, Event};
 
+    pub(crate) static TESTS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/");
+    
     /// A simple widget that fills its space with a single character.
     /// Useful for testing rendering and layout.
     pub struct FillWidget {
@@ -155,14 +159,6 @@ mod inner {
     /// * `text` - The rendered text to compare
     /// * `file_name` - The name of the test file (relative to the tests directory)
     ///                 If the name doesn't end with ".txt", ".txt" will be appended
-    ///
-    /// # Example
-    /// ```ignore
-    /// use crate::test::assert_match_with_test_file;
-    /// let output = crate::rendering::TestOutput::<10, 10>::new();
-    /// // ... render to output ...
-    /// assert_match_with_test_file(&output.to_string(), "expected_output");
-    /// ```
     pub fn assert_match_with_test_file(text: &str, file_name: &str) {
         let tests_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/");
         let extension = if file_name.ends_with(".txt") {
@@ -179,7 +175,7 @@ mod inner {
             );
         let expected_result =
             std::io::read_to_string(expected_result).expect("Failed to read test file content");
-        assert_eq!(text.trim_end(), expected_result.trim_end());
+        assert_eq!(text, expected_result);
     }
 
     pub mod strings {

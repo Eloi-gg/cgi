@@ -65,6 +65,25 @@ pub mod block {
         one_eighth: ONE_EIGHTH,
         empty: ' ',
     };
+
+    impl Set {
+        pub fn get_level(&self, amt: f32) -> char {
+            assert!(amt >= 0.0 && amt <= 1.0, "amt must be between 0.0 and 1.0");
+            let amt = amt.max(0.0).min(1.0);
+            let level = (amt * 8.0).round() as usize;
+            [
+                self.full,
+                self.seven_eighths,
+                self.three_quarters,
+                self.five_eighths,
+                self.half,
+                self.three_eighths,
+                self.one_quarter,
+                self.one_eighth,
+                ' ',
+            ][8-level]
+        }
+    }
 }
 
 pub mod bar {
@@ -275,6 +294,7 @@ mod outlines {
         let text_box = crate::factory_widgets::text::TextBox::new(
             self::test::strings::lorem_ipsum_long(),
             Listener::empty(),
+            factory_widgets::text::TextAlign::Left,
         );
         let widget = WidgetBuilder::new(text_box)
             .with_outline(OutlineStyle::Thick)
@@ -291,6 +311,7 @@ mod outlines {
         let text_box = crate::factory_widgets::text::TextBox::new(
             self::test::strings::lorem_ipsum_long(),
             Listener::empty(),
+                factory_widgets::text::TextAlign::Left,
         );
         // let simpler_widget = WidgetBuilder::new(FillWidget::new('#'))
         //     .with_outline(OutlineStyle::Thick)
