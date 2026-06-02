@@ -5,6 +5,7 @@ use crate::Displayable;
 pub(crate) struct WidgetData {
     pub dirty: bool,
     pub outline: Option<crate::symbols::line::Set>,
+    pub title: Option<String>,
 }
 
 #[derive(Debug)]
@@ -47,7 +48,7 @@ impl<T: Displayable + ?Sized + 'static> Hash for Widget<T> {
 impl<T: Displayable + 'static> Widget<T> {
     pub fn new(displayable: T) -> Self {
         Widget {
-            data: Arc::new(Mutex::new(WidgetData { dirty: true, outline: None })),
+            data: Arc::new(Mutex::new(WidgetData { dirty: true, outline: None, title: None })),
             displayable: Arc::new(RwLock::new(displayable)),
         }
     }
@@ -92,6 +93,7 @@ pub struct WidgetBuilder<T: Displayable + 'static> {
     displayable: T,
     dirty: bool,
     outline: Option<crate::symbols::line::Set>,
+    title: Option<String>,
 }
 
 impl<T: Displayable + 'static> WidgetBuilder<T> {
@@ -104,6 +106,7 @@ impl<T: Displayable + 'static> WidgetBuilder<T> {
             displayable,
             dirty: true,
             outline: None,
+            title: None,
         }
     }
 
@@ -121,8 +124,14 @@ impl<T: Displayable + 'static> WidgetBuilder<T> {
             data: Arc::new(Mutex::new(WidgetData {
                 dirty: self.dirty,
                 outline: self.outline,
+                title: self.title,
             })),
             displayable: Arc::new(RwLock::new(self.displayable)),
         }
+    }
+
+    pub fn with_title(mut self, title: &str) -> Self {
+        self.title = Some(title.to_string());
+        self
     }
 }

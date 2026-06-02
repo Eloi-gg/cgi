@@ -249,7 +249,7 @@ pub mod line {
     };
 
     impl Set {
-        pub(crate) fn render(&self, size: (u16, u16), output: &mut Vec<(u16, u16, char)>) {
+        pub(crate) fn render(&self, size: (u16, u16), output: &mut Vec<(u16, u16, char)>, title: Option<&String>) {
             for x in 1..(size.0 - 1) {
                 output.push((x, 0, self.horizontal));
                 output.push((x, size.1 - 1, self.horizontal));
@@ -264,6 +264,18 @@ pub mod line {
             output.push((size.0 - 1, 0, self.top_right));
             output.push((0, size.1 - 1, self.bottom_left));
             output.push((size.0 - 1, size.1 - 1, self.bottom_right));
+
+            // Render title if provided
+            if let Some(title_text) = title {
+                let title_bytes = title_text.as_bytes();
+                let available_width = (size.0 - 2) as usize;
+                let title_len = title_bytes.len().min(available_width);
+                
+                // Position title at x=1 (right after top_left corner)
+                for (i, &byte) in title_bytes[..title_len].iter().enumerate() {
+                    output.push((1 + i as u16, 0, byte as char));
+                }
+            }
         }
     }
 }

@@ -173,26 +173,29 @@ pub mod text {
             let mut current_line_text: Vec<char> = Vec::new();
             let align = &self.align;
             let text = &self.text;
+            let width = size.0 as usize;
 
             for i in self.changed_chars.drain(..) {
                 if line >= size.1 {
                     break;
                 }
 
-                // Accumulate current line
-                if text[i] == '\n' {
+                let ch = text[i];
+
+                // Handle newlines
+                if ch == '\n' {
                     // Output current line with alignment
                     let line_width = current_line_text.len();
                     let offset = match align {
                         TextAlign::Left => 0,
-                        TextAlign::Center => (size.0 as usize).saturating_sub(line_width) / 2,
-                        TextAlign::Right => (size.0 as usize).saturating_sub(line_width),
+                        TextAlign::Center => width.saturating_sub(line_width) / 2,
+                        TextAlign::Right => width.saturating_sub(line_width),
                     };
 
-                    for (j, &ch) in current_line_text.iter().enumerate() {
+                    for (j, &c) in current_line_text.iter().enumerate() {
                         let final_column = j + offset;
-                        if final_column < size.0 as usize {
-                            out.push((final_column as u16, line, ch));
+                        if final_column < width {
+                            out.push((final_column as u16, line, c));
                         }
                     }
 
@@ -201,7 +204,28 @@ pub mod text {
                     continue;
                 }
 
-                current_line_text.push(text[i]);
+                // Check if adding this character would exceed the width
+                if current_line_text.len() >= width {
+                    // Output current line with alignment
+                    let line_width = current_line_text.len();
+                    let offset = match align {
+                        TextAlign::Left => 0,
+                        TextAlign::Center => width.saturating_sub(line_width) / 2,
+                        TextAlign::Right => width.saturating_sub(line_width),
+                    };
+
+                    for (j, &c) in current_line_text.iter().enumerate() {
+                        let final_column = j + offset;
+                        if final_column < width {
+                            out.push((final_column as u16, line, c));
+                        }
+                    }
+
+                    line += 1;
+                    current_line_text.clear();
+                }
+
+                current_line_text.push(ch);
             }
 
             // Output last line if not empty
@@ -209,14 +233,14 @@ pub mod text {
                 let line_width = current_line_text.len();
                 let offset = match align {
                     TextAlign::Left => 0,
-                    TextAlign::Center => (size.0 as usize).saturating_sub(line_width) / 2,
-                    TextAlign::Right => (size.0 as usize).saturating_sub(line_width),
+                    TextAlign::Center => width.saturating_sub(line_width) / 2,
+                    TextAlign::Right => width.saturating_sub(line_width),
                 };
 
-                for (j, &ch) in current_line_text.iter().enumerate() {
+                for (j, &c) in current_line_text.iter().enumerate() {
                     let final_column = j + offset;
-                    if final_column < size.0 as usize {
-                        out.push((final_column as u16, line, ch));
+                    if final_column < width {
+                        out.push((final_column as u16, line, c));
                     }
                 }
             }

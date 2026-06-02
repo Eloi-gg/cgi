@@ -50,11 +50,16 @@ impl crate::layout::RenderedLayout {
         let mut local_changes = Vec::new();
 
         for (widget, placement) in self.0.iter() {
-            if let Ok(mut data) = widget.widget.data.lock() {
-                    //TODO: do we really need `dirty`?
+            if let Ok(data) = widget.widget.data.lock() {
+                //TODO: do we really need `dirty`?
                 if (*data).dirty {
                     let inside_placement = if let Some(ref outline) = (*data).outline {
-                        outline.render((placement.width as u16, placement.height as u16), &mut local_changes);
+                        outline.render(
+                            (placement.width as u16, placement.height as u16),
+                            &mut local_changes,
+                            (*data).title.as_ref(),
+                        );
+                        
                         for (x, y, c) in local_changes.drain(..) {
                             global_changes.push((
                                 x + placement.x as u16,
@@ -180,9 +185,10 @@ impl Output for LinuxOutput {
 mod rendering_tests {
     use super::*;
     use crate::coordinate::Coordinate::*;
-    use crate::*;
     use crate::test::*;
-    
+    use crate::*;
+    use crate::factory_widgets::{Listener, progression::*, text::*};
+
     #[test]
     fn offsets_10_x_10() {
         let mut output = TestOutput::<10, 10>::new();
@@ -304,7 +310,7 @@ mod rendering_tests {
             }
             widgets[i].set_outline(borders[i]);
         }
-        dbg!(placements);
+
         let mut layout = Layout::new();
         for (widget, placement) in widgets.iter().zip(placements.iter()) {
             layout.add_widget(widget, *placement);
@@ -315,6 +321,111 @@ mod rendering_tests {
         layout.render_to_output(&mut output);
         let rendered_text = output.to_string();
 
-        println!("{}", rendered_text);
+        assert_match_with_test_file(&rendered_text, "10_border_types");
     }
+
+    #[test]
+    fn title() {
+        let text_box = crate::factory_widgets::text::TextBox::new(
+            self::test::strings::lorem_ipsum_long(),
+            factory_widgets::Listener::empty(),
+            factory_widgets::text::TextAlign::Left,
+        );
+        let widget = WidgetBuilder::new(text_box)
+            .with_outline(symbols::OutlineStyle::Thick)
+            .with_title("Title")
+            .build();
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
+        println!("{}", rendered_text);
+        crate::test::assert_match_with_test_file(&rendered_text, "8_title.txt");
+    }
+
+    #[test]
+    fn titles_full() {
+        let mut output = TestOutput::<132, 16>::new();
+
+            let title = WidgetBuilder::new(TextBox::new(
+                "Title",
+                Listener::empty(),
+                factory_widgets::text::TextAlign::Center,
+            ))
+            .with_outline(symbols::OutlineStyle::Double)
+            .with_title("Title")
+            .build();
+    
+            let panel_left = WidgetBuilder::new(TextBox::new(
+                "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                Listener::empty(),
+                TextAlign::Left,
+            ))
+            .with_outline(symbols::OutlineStyle::Rounded)
+            .with_title("Panel Left")
+            .build();
+            let panel_right = WidgetBuilder::new(TextBox::new(
+                "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                Listener::empty(),
+                TextAlign::Left,
+            ))
+            .with_outline(symbols::OutlineStyle::Rounded)
+            .with_title("Panel Right")
+            .build();
+    
+            let progress_bar = WidgetBuilder::new(ProgressBar::new(
+                ProgressBarType::HorizontalNineLevels,
+                0.565,
+                Listener::empty(),
+            ))
+            .with_outline(symbols::OutlineStyle::Normal)
+            .with_title("Progress")
+            .build();
+    
+            // Title section: top (lines 0-2, height 3)
+            let title_placement = WidgetPlacement::new(
+                Absolute(1),
+                Absolute(0),
+                Absolute(130),
+                Absolute(3),
+            );
+        
+            // Panels section: middle (lines 5-10, height 6)
+            let panels_placement = WidgetPlacement::new(
+                Absolute(1),
+                Absolute(5),
+                Absolute(130),
+                Absolute(6),
+            );
+        
+            let mut panels_below_placement = [WidgetPlacement::fullscreen(); 2];
+            panels_placement.split(2, 1, &mut panels_below_placement);
+        
+            // Progress bar section: bottom (lines 13-15, height 3)
+            let progress_bar_placement = WidgetPlacement::new(
+                Absolute(1),
+                Absolute(13),
+                Absolute(130),
+                Absolute(3),
+            );
+    
+            let mut layout = crate::Layout::new()
+                .with_widget(&title, title_placement)
+                .with_widget(
+                    &panel_left,
+                    panels_below_placement[0],
+                )
+                .with_widget(
+                    &panel_right,
+                    panels_below_placement[1],
+                )
+                .with_widget(
+                    &progress_bar,
+                    progress_bar_placement,
+                );
+
+            let layout = layout.render(132, 16);
+            output.clear();
+            layout.render_to_output(&mut output);
+            let rendered_text = output.to_string();
+
+            crate::test::assert_match_with_test_file(&rendered_text, "9_titles_full");
+        }
 }
