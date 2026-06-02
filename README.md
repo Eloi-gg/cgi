@@ -6,7 +6,7 @@ CGI is a lightweight library for rendering simple interfaces in the terminal. It
 
 The project is far from finished. Some breaking changes WILL be made in the future. 
 
-For more informations on what features are missing, see [the features that are missing](#Features yet to be implemented)
+For more informations on what features are missing, see [missing features](#features-yet-to-be-implemented)
 
 ## Features 
 
