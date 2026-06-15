@@ -1,13 +1,13 @@
 // TODO: this file is a mess of workarounds.
 
-use std::io::Write;
+use crate::{ActionList, rendering::Output};
 use std::collections::HashMap;
-use crate::rendering::Output;
+use std::io::Write;
 
 use crate::{
-    Displayable, Widget,
     layout::{ComputedWidgetPlacement, Layout, RenderedLayout},
     widget::WidgetHdl,
+    Displayable, Widget,
 };
 
 pub struct Application {
@@ -59,16 +59,19 @@ impl Application {
     fn size_changed(&mut self, new_x: u16, new_y: u16) {
         self.current_layout = (self.behavior)((new_x, new_y));
         self.size = (new_x, new_y);
-        self.rendered_layout = self.layouts[&self.current_layout].render(self.size.0 as i32, self.size.1 as i32);
+        self.rendered_layout =
+            self.layouts[&self.current_layout].render(self.size.0 as i32, self.size.1 as i32);
         self.output.flush();
         self.update();
     }
 
     pub fn run(mut self) {
         use crossterm::{
-            event::{self, Event, KeyCode},
-            terminal::size,
+            event::{poll, read, Event, KeyCode},
+            terminal::{enable_raw_mode, size},
         };
+
+        enable_raw_mode().expect("Failed to enable raw mode");
 
         let (cols, rows) = size().unwrap();
         println!("Terminal size: {} cols, {} rows", cols, rows);
@@ -77,14 +80,13 @@ impl Application {
         self.size_changed(cols, rows);
 
         for _ in 0..500 {
-            if event::poll(std::time::Duration::from_millis(100)).unwrap() {
-                let event = event::read().unwrap();
+            if poll(std::time::Duration::from_millis(100)).unwrap() {
+                let event = read().unwrap();
                 match event {
                     Event::Key(key_event) => {
                         if key_event.code == KeyCode::Esc {
                             break;
                         }
-                        println!("Key pressed: {:?}", key_event);
                     }
                     Event::Resize(new_cols, new_rows) => {
                         self.size_changed(new_cols, new_rows);
@@ -92,8 +94,28 @@ impl Application {
                     }
                     _ => {}
                 }
+                let mut actions_list = ActionList::new();
                 for widget in self.rendered_layout.0.keys() {
-                    widget.widget.displayable.write().unwrap().on_event(event.clone().into());
+                    widget
+                        .widget
+                        .displayable
+                        .write()
+                        .unwrap()
+                        .on_event(event.clone().into(), &mut actions_list);
+
+                    // TODO: apply actions
+
+                    for action in actions_list.drain() {
+                        match action {
+                            crate::Action::UpdateWidget => {
+                                self.rendered_layout
+                                    .render_widget_to_output(widget, &mut self.output);
+                            }
+                            _ => {
+                                println!("Action: {:?}", action);
+                            }
+                        }
+                    }
                 }
             }
             // self.update();

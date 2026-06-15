@@ -47,63 +47,82 @@ pub(crate) trait Output {
 impl crate::layout::RenderedLayout {
     pub(crate) fn render_to_output(&self, output: &mut dyn Output) {
         let mut global_changes = Vec::new();
-        let mut local_changes = Vec::new();
 
         for (widget, placement) in self.0.iter() {
-            if let Ok(data) = widget.widget.data.lock() {
-                //TODO: do we really need `dirty`?
-                if (*data).dirty {
-                    let inside_placement = if let Some(ref outline) = (*data).outline {
-                        outline.render(
-                            (placement.width as u16, placement.height as u16),
-                            &mut local_changes,
-                            (*data).title.as_ref(),
-                        );
-                        
-                        for (x, y, c) in local_changes.drain(..) {
-                            global_changes.push((
-                                x + placement.x as u16,
-                                y + placement.y as u16,
-                                c,
-                            ));
-                        }
-                        ComputedWidgetPlacement {
-                            x: placement.x + 1,
-                            y: placement.y + 1,
-                            width: placement.width - 2,
-                            height: placement.height - 2,
-                        }
-                    } else {
-                        *placement
-                    };
-                    if inside_placement.width > 0 && inside_placement.height > 0 {
-                        widget
-                            .widget
-                            .displayable
-                            .write()
-                            .unwrap()
-                            .get_changed_chars(
-                                (
-                                    inside_placement.width as u16,
-                                    inside_placement.height as u16,
-                                ),
-                                &mut local_changes,
-                            );
-                        // (*data).dirty = false;
-                        for (x, y, c) in local_changes.drain(..) {
-                            global_changes.push((
-                                x + inside_placement.x as u16,
-                                y + inside_placement.y as u16,
-                                c,
-                            ));
-                        }
-                    }
-                }
-            }
+            self.render_widget(widget, placement, &mut global_changes);
         }
 
         for (x, y, c) in global_changes {
             output.place_char(x, y, c);
+        }
+    }
+
+    pub(crate) fn render_widget_to_output(
+        &self,
+        widget: &crate::widget::WidgetHdl,
+        output: &mut dyn Output,
+    ) {
+        let placement = self.0.get(widget).expect("Widget not found in rendered layout");
+        let mut global_changes = Vec::new();
+        self.render_widget(widget, placement, &mut global_changes);
+        for (x, y, c) in global_changes {
+            output.place_char(x, y, c);
+        }
+    }
+
+    fn render_widget(
+        &self,
+        widget: &crate::widget::WidgetHdl,
+        placement: &ComputedWidgetPlacement,
+        global_changes: &mut Vec<(u16, u16, char)>,
+    ) {
+        let mut local_changes = Vec::new();
+
+        if let Ok(data) = widget.widget.data.lock() {
+            //TODO: do we really need `dirty`?
+            if (*data).dirty {
+                let inside_placement = if let Some(ref outline) = (*data).outline {
+                    outline.render(
+                        (placement.width as u16, placement.height as u16),
+                        &mut local_changes,
+                        (*data).title.as_ref(),
+                    );
+
+                    for (x, y, c) in local_changes.drain(..) {
+                        global_changes.push((x + placement.x as u16, y + placement.y as u16, c));
+                    }
+                    ComputedWidgetPlacement {
+                        x: placement.x + 1,
+                        y: placement.y + 1,
+                        width: placement.width - 2,
+                        height: placement.height - 2,
+                    }
+                } else {
+                    *placement
+                };
+                if inside_placement.width > 0 && inside_placement.height > 0 {
+                    widget
+                        .widget
+                        .displayable
+                        .write()
+                        .unwrap()
+                        .get_changed_chars(
+                            (
+                                inside_placement.width as u16,
+                                inside_placement.height as u16,
+                            ),
+                            &mut local_changes,
+                        );
+                    // (*data).dirty = false;
+                    for (x, y, c) in local_changes.drain(..) {
+                        global_changes.push((
+                            x + inside_placement.x as u16,
+                            y + inside_placement.y as u16,
+                            c,
+                        ));
+                    }
+                }
+            }
         }
     }
 }
@@ -185,9 +204,9 @@ impl Output for LinuxOutput {
 mod rendering_tests {
     use super::*;
     use crate::coordinate::Coordinate::*;
+    use crate::factory_widgets::{progression::*, text::*, Listener};
     use crate::test::*;
     use crate::*;
-    use crate::factory_widgets::{Listener, progression::*, text::*};
 
     #[test]
     fn offsets_10_x_10() {
@@ -344,88 +363,67 @@ mod rendering_tests {
     fn titles_full() {
         let mut output = TestOutput::<132, 16>::new();
 
-            let title = WidgetBuilder::new(TextBox::new(
-                "Title",
-                Listener::empty(),
-                factory_widgets::text::TextAlign::Center,
-            ))
-            .with_outline(symbols::OutlineStyle::Double)
-            .with_title("Title")
-            .build();
-    
-            let panel_left = WidgetBuilder::new(TextBox::new(
-                "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-                Listener::empty(),
-                TextAlign::Left,
-            ))
-            .with_outline(symbols::OutlineStyle::Rounded)
-            .with_title("Panel Left")
-            .build();
-            let panel_right = WidgetBuilder::new(TextBox::new(
-                "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-                Listener::empty(),
-                TextAlign::Left,
-            ))
-            .with_outline(symbols::OutlineStyle::Rounded)
-            .with_title("Panel Right")
-            .build();
-    
-            let progress_bar = WidgetBuilder::new(ProgressBar::new(
-                ProgressBarType::HorizontalNineLevels,
-                0.565,
-                Listener::empty(),
-            ))
-            .with_outline(symbols::OutlineStyle::Normal)
-            .with_title("Progress")
-            .build();
-    
-            // Title section: top (lines 0-2, height 3)
-            let title_placement = WidgetPlacement::new(
-                Absolute(1),
-                Absolute(0),
-                Absolute(130),
-                Absolute(3),
-            );
-        
-            // Panels section: middle (lines 5-10, height 6)
-            let panels_placement = WidgetPlacement::new(
-                Absolute(1),
-                Absolute(5),
-                Absolute(130),
-                Absolute(6),
-            );
-        
-            let mut panels_below_placement = [WidgetPlacement::fullscreen(); 2];
-            panels_placement.split(2, 1, &mut panels_below_placement);
-        
-            // Progress bar section: bottom (lines 13-15, height 3)
-            let progress_bar_placement = WidgetPlacement::new(
-                Absolute(1),
-                Absolute(13),
-                Absolute(130),
-                Absolute(3),
-            );
-    
-            let mut layout = crate::Layout::new()
-                .with_widget(&title, title_placement)
-                .with_widget(
-                    &panel_left,
-                    panels_below_placement[0],
-                )
-                .with_widget(
-                    &panel_right,
-                    panels_below_placement[1],
-                )
-                .with_widget(
-                    &progress_bar,
-                    progress_bar_placement,
-                );
+        let title = WidgetBuilder::new(TextBox::new(
+            "Title",
+            Listener::empty(),
+            factory_widgets::text::TextAlign::Center,
+        ))
+        .with_outline(symbols::OutlineStyle::Double)
+        .with_title("Title")
+        .build();
 
-            let layout = layout.render(132, 16);
-            output.clear();
-            layout.render_to_output(&mut output);
-            let rendered_text = output.to_string();
+        let panel_left = WidgetBuilder::new(TextBox::new(
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+            Listener::empty(),
+            TextAlign::Left,
+        ))
+        .with_outline(symbols::OutlineStyle::Rounded)
+        .with_title("Panel Left")
+        .build();
+        let panel_right = WidgetBuilder::new(TextBox::new(
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+            Listener::empty(),
+            TextAlign::Left,
+        ))
+        .with_outline(symbols::OutlineStyle::Rounded)
+        .with_title("Panel Right")
+        .build();
 
-            crate::test::assert_match_with_test_file(&rendered_text, "9_titles_full");
-        }
+        let progress_bar = WidgetBuilder::new(ProgressBar::new(
+            ProgressBarType::HorizontalNineLevels,
+            0.565,
+            Listener::empty(),
+        ))
+        .with_outline(symbols::OutlineStyle::Normal)
+        .with_title("Progress")
+        .build();
+
+        // Title section: top (lines 0-2, height 3)
+        let title_placement =
+            WidgetPlacement::new(Absolute(1), Absolute(0), Absolute(130), Absolute(3));
+
+        // Panels section: middle (lines 5-10, height 6)
+        let panels_placement =
+            WidgetPlacement::new(Absolute(1), Absolute(5), Absolute(130), Absolute(6));
+
+        let mut panels_below_placement = [WidgetPlacement::fullscreen(); 2];
+        panels_placement.split(2, 1, &mut panels_below_placement);
+
+        // Progress bar section: bottom (lines 13-15, height 3)
+        let progress_bar_placement =
+            WidgetPlacement::new(Absolute(1), Absolute(13), Absolute(130), Absolute(3));
+
+        let mut layout = crate::Layout::new()
+            .with_widget(&title, title_placement)
+            .with_widget(&panel_left, panels_below_placement[0])
+            .with_widget(&panel_right, panels_below_placement[1])
+            .with_widget(&progress_bar, progress_bar_placement);
+
+        let layout = layout.render(132, 16);
+        output.clear();
+        layout.render_to_output(&mut output);
+        let rendered_text = output.to_string();
+
+        crate::test::assert_match_with_test_file(&rendered_text, "9_titles_full");
+    }
 }

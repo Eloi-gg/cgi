@@ -124,6 +124,38 @@ impl WidgetPlacement {
         self.height = height.into();
         self
     }
+
+    pub fn get_below(&self) -> Self {
+        Self {
+            tl: (self.tl.0, self.tl.1 + self.height),
+            width: self.width,
+            height: Coordinate::Relative(1.0) - self.height - self.tl.1,
+        }
+    }
+
+    pub fn get_right(&self) -> Self {
+        Self {
+            tl: (self.tl.0 + self.width, self.tl.1),
+            width: Coordinate::Relative(1.0) - self.width - self.tl.0,
+            height: self.height,
+        }
+    }
+
+    pub fn get_left(&self) -> Self {
+        Self {
+            tl: (0.into(), self.tl.1),
+            width: self.tl.0,
+            height: self.height,
+        }
+    }
+
+    pub fn get_above(&self) -> Self {
+        Self {
+            tl: (self.tl.0, 0.into()),
+            width: self.width,
+            height: self.tl.1,
+        }
+    }
 }
 
 impl Layout {

@@ -19,7 +19,7 @@ impl Displayable for CustomWidget {
         todo!()
     }
 
-    fn on_event(&mut self, event: cgi::Event) {
+    fn on_event(&mut self, event: cgi::Event, actions: &mut cgi::ActionList) {
         todo!()
     }
 }

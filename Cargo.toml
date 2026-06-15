@@ -1,10 +1,6 @@
 [workspace]
-members = ["cgi", "examples/*"]
+members = ["cgi", "examples/*", "utils/*"]
 resolver = "2"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-
-# [[bin]]
-# name = "dummy"
-# path = "examples/dummy/src/main.rs"

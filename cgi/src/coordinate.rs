@@ -204,9 +204,9 @@ impl From<(i32, f32)> for Coordinate {
 impl Debug for Coordinate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Coordinate::Absolute(a) => write!(f, "{}a", a),
-            Coordinate::Relative(r) => write!(f, "{}r", r),
-            Coordinate::Hybrid(a, r) => write!(f, "{}a|{}r", a, r),
+            Coordinate::Absolute(a) => write!(f, "{}", a),
+            Coordinate::Relative(r) => write!(f, "{}.{}", r.floor() as i32, (r.fract().abs() * 10.0).round() as i32), // with at least one digit in the decimal part
+            Coordinate::Hybrid(a, r) => write!(f, "[{:.1}|{}]", r, a),
         }
     }
 }

@@ -5,7 +5,7 @@ mod dbg_window;
 fn main() {
     let dbg_window_path = std::env::current_dir().unwrap().join("target/debug/dbg_window");
     dbg_window::create::spawn_server(dbg_window_path.to_str().unwrap(), "127.0.0.1", 4000);
-    let mut console = dbg_window::connect::connect_to_server("MainApp", "127.0.0.1", 4000, Some(std::time::Duration::from_secs(5)))
+    let mut console: dbg_window::connect::DebugConsole = dbg_window::connect::connect_to_server("MainApp", "127.0.0.1", 4000, Some(std::time::Duration::from_secs(5)))
         .expect("Failed to connect to DbgServer");
 
     for i in 0..5 {

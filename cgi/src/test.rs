@@ -33,7 +33,7 @@ mod inner {
             }
         }
 
-        fn on_event(&mut self, _event: Event) {
+    fn on_event(&mut self, event: Event, actions: &mut crate::ActionList) {
             // No-op for testing
         }
     }
@@ -95,7 +95,7 @@ mod inner {
             // No-op for testing
         }
 
-        fn on_event(&mut self, _event: Event) {
+        fn on_event(&mut self, _event: Event, actions: &mut crate::ActionList) {
             // No-op for testing
         }
     }

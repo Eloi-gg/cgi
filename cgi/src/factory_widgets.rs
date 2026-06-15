@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
-use crate::Displayable;
+use crate::{Displayable, EventType};
 
 pub struct Listener<T: ?Sized> {
-    events: HashSet<crate::Event>,
+    events: Vec<EventType>,
     on_event: fn(crate::Event, &mut T),
 }
 
@@ -14,23 +14,23 @@ impl<T: ?Sized> Listener<T> {
 
     pub fn new(on_event: fn(crate::Event, &mut T)) -> Self {
         Self {
-            events: HashSet::new(),
+            events: Vec::new(),
             on_event,
         }
     }
 
-    pub fn listen_for(&mut self, event: crate::Event) {
-        self.events.insert(event);
+    pub fn listen_for(&mut self, event: crate::EventType) {
+        self.events.push(event.into());
     }
 
-    pub fn listening_for(self, event: crate::Event) -> Self {
+    pub fn listening_for(self, event: crate::EventType) -> Self {
         let mut listener = self;
         listener.listen_for(event);
         listener
     }
 
-    pub fn is_listening_for(&self, event: crate::Event) -> bool {
-        self.events.contains(&event)
+    pub fn is_listening_for(&self, event: crate::EventType) -> bool {
+        self.events.contains(&event.into())
     }
 }
 
@@ -107,8 +107,8 @@ pub mod progression {
             }
         }
 
-        fn on_event(&mut self, event: crate::Event) {
-            if self.listener.is_listening_for(event) {
+    fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
+            if self.listener.is_listening_for(event.into()) {
                 (self.listener.on_event)(event, self);
             }
         }
@@ -126,6 +126,7 @@ pub mod text {
 
     pub struct TextBox {
         text: Vec<char>,
+        formatted_text: Vec<Vec<char>>, // TODO: change structure : store one big chunk of memory
         changed_chars: Vec<usize>, // points to chars in the text
         size: (u16, u16),          // Remove ?
         listener: Listener<Self>,
@@ -152,6 +153,39 @@ pub mod text {
                     self.changed_chars.push(i);
                 }
             }
+
+            for i in text.len()..self.text.len() {
+                self.text[i] = ' ';
+                self.changed_chars.push(i);
+            }
+        }
+
+        pub fn append_text(&mut self, text: &str) {
+            let start_index = self.text.len();
+            self.text.extend(text.chars());
+            for i in start_index..self.text.len() {
+                self.changed_chars.push(i);
+            }
+        }
+
+        pub fn append_char(&mut self, c: char) {
+            let index = self.text.len();
+            self.text.push(c);
+            self.changed_chars.push(index);
+        }
+
+        pub fn remove_text(&mut self, start: usize, end: usize) {
+            if start >= end || end > self.text.len() {
+                return;
+            }
+            for i in start..end {
+                self.text[i] = ' ';
+                self.changed_chars.push(i);
+            }
+        }
+
+        pub fn text_len(&self) -> usize {
+            self.text.len()
         }
     }
 
@@ -246,12 +280,13 @@ pub mod text {
             }
         }
 
-        fn on_event(&mut self, event: crate::Event) {
+    fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
             if let crate::Event::Resize(w, h) = event {
                 self.changed_chars = (0..self.text.len()).collect();
             }
-            if self.listener.is_listening_for(event) {
+            if self.listener.is_listening_for(event.into()) {
                 (self.listener.on_event)(event, self);
+                actions.add(crate::Action::UpdateWidget);
             }
         }
     }
@@ -260,7 +295,30 @@ pub mod text {
 #[cfg(test)]
 mod factory_widgets_tests {
     use super::text::*;
-    use crate::{test::*, WidgetBuilder, WidgetPlacement, *};
+    use crate::{WidgetBuilder, WidgetPlacement, factory_widgets::Listener, test::*, *};
+
+    #[test]
+    fn adding_and_removing_text() {
+        let mut changed = Vec::new();
+        let mut text_box = TextBox::new("123", Listener::empty(), TextAlign::Left);
+        text_box.append_char('4');
+        text_box.append_text("567");
+        text_box.get_changed_chars((16,1), &mut changed);
+        assert_eq!(changed, (0..7).into_iter().map(|i| (i as u16, 0, char::from_digit(i + 1, 10).unwrap()) ).collect::<Vec<_>>());
+
+        changed.drain(..);
+        text_box.get_changed_chars((16,1), &mut changed);
+        assert!(changed.is_empty());
+
+        text_box.remove_text(text_box.text_len() - 3, text_box.text_len());
+        text_box.get_changed_chars((16,1), &mut changed);
+        assert_eq!(changed, (4..7).into_iter().map(|i| ( i as u16, 0, ' ') ).collect::<Vec<_>>());
+
+        changed.drain(..);
+        text_box.append_text("56");
+        text_box.get_changed_chars((16,1), &mut changed);
+        assert_eq!(changed, (4..6).into_iter().map(|i| (i as u16, 0, char::from_digit(i + 1, 10).unwrap()) ).collect::<Vec<_>>());
+    }
 
     #[test]
     fn centered_text() {
