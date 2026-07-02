@@ -1,6 +1,6 @@
 // TODO: this file is a mess of workarounds.
 
-use crate::{ActionList, rendering::Output};
+use crate::{rendering::Output, ActionList};
 use std::collections::HashMap;
 use std::io::Write;
 
@@ -57,6 +57,14 @@ impl Application {
     }
 
     fn size_changed(&mut self, new_x: u16, new_y: u16) {
+        for widget in self.rendered_layout.0.keys() {
+            widget
+                .widget
+                .displayable
+                .write()
+                .unwrap()
+                .on_event(crate::Event::Resize(new_x, new_y), &mut ActionList::new());
+        }
         self.current_layout = (self.behavior)((new_x, new_y));
         self.size = (new_x, new_y);
         self.rendered_layout =

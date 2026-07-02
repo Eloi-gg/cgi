@@ -80,7 +80,11 @@ impl From<crossterm::event::Event> for Event {
     fn from(event: crossterm::event::Event) -> Self {
         match event {
             crossterm::event::Event::Resize(x, y) => Event::Resize(x, y),
-            crossterm::event::Event::Key(key_event) => Self::KeyPress(key_event.code),
+            crossterm::event::Event::Key(key_event) => if key_event.kind == crossterm::event::KeyEventKind::Press {
+                Self::KeyPress(key_event.code)
+            } else {
+                Self::Custom()
+            },
             _ => Event::Custom(),
         }
     }

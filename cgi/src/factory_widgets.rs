@@ -199,11 +199,11 @@ pub mod text {
         }
 
         pub fn text_len(&self) -> usize {
-            self.text.len()
+            self.current_length
         }
 
         fn recompute_layout_from(&mut self, start: usize) {
-            let start = if start > 0 { start - 1 } else { 0 };
+            let start = start.min(self.layout.len());
             if let Some((x, y, c)) = self.get_char_placement(start) {
                 let mut line_width = x;
                 let mut iter = self.text[start..].iter();
@@ -261,7 +261,11 @@ pub mod text {
                         TextAlign::Center => self.size.0.saturating_sub(*line_width) / 2,
                         TextAlign::Right => self.size.0.saturating_sub(*line_width),
                     };
-                    return Some((internal_index as u16 + offset, line as u16, self.text[index])); // TODO: fix indexing. See test centered_text
+                    if let Some(c) = self.text.iter().filter(|c| **c != '\n').nth(index) {
+                        return Some((internal_index as u16 + offset, line as u16, *c));
+                    } else {
+                        return None;
+                    }
                 }
                 internal_index -= *line_width as usize;
             }
@@ -283,11 +287,9 @@ pub mod text {
                 return;
             }
 
-            let changed_chars = self.changed_chars.drain(..).collect::<Vec<_>>();
-            for c in &changed_chars {
-                dbg!(self.get_char_placement(*c));
-                dbg!(*c);
-            }
+            let mut changed_chars = self.changed_chars.drain(..).collect::<Vec<_>>();
+            changed_chars.sort();
+            changed_chars.dedup();
             let changes = changed_chars
                 .into_iter()
                 .filter_map(|i| self.get_char_placement(i));
@@ -356,7 +358,22 @@ mod factory_widgets_tests {
                 .collect::<Vec<_>>()
         );
 
-        // TODO: test with newline
+        changed.drain(..);
+        text_box.append_text("\n789xx");
+        text_box.remove_text(text_box.text_len() - 1, text_box.text_len());
+        text_box.remove_text(text_box.text_len() - 1, text_box.text_len());
+
+        text_box.get_changed_chars((16, 2), &mut changed);
+        assert_eq!(
+            changed,
+            vec![
+                (0, 1, '7'),
+                (1, 1, '8'),
+                (2, 1, '9'),
+                (3, 1, ' '),
+                (4, 1, ' '),
+            ]
+        );
     }
 
     #[test]
@@ -368,6 +385,7 @@ mod factory_widgets_tests {
             TextAlign::Center,
         ))
         .build();
+        text_box.edit().on_event(Event::Resize(25, 2), &mut ActionList::new());
     
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
@@ -406,6 +424,7 @@ mod factory_widgets_tests {
             TextAlign::Right,
         ))
         .build();
+        text_box.edit().on_event(Event::Resize(25, 2), &mut ActionList::new());
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
@@ -424,6 +443,7 @@ mod factory_widgets_tests {
             TextAlign::Right,
         ))
         .build();
+        text_box.edit().on_event(Event::Resize(25, 2), &mut ActionList::new());
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
