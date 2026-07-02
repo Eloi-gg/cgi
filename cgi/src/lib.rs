@@ -37,7 +37,7 @@ pub enum EventType {
 pub struct ActionList(Vec<Action>);
 
 impl ActionList {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self(Vec::new())
     }
 

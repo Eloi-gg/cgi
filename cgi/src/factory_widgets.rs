@@ -107,7 +107,7 @@ pub mod progression {
             }
         }
 
-    fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
+        fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
             if self.listener.is_listening_for(event.into()) {
                 (self.listener.on_event)(event, self);
             }
@@ -126,9 +126,10 @@ pub mod text {
 
     pub struct TextBox {
         text: Vec<char>,
-        formatted_text: Vec<Vec<char>>, // TODO: change structure : store one big chunk of memory
+        layout: Vec<u16>,
         changed_chars: Vec<usize>, // points to chars in the text
         size: (u16, u16),          // Remove ?
+        current_length: usize,
         listener: Listener<Self>,
         align: TextAlign,
     }
@@ -138,11 +139,13 @@ pub mod text {
             let text: Vec<char> = text.chars().collect();
             let changed_chars: Vec<usize> = (0..text.len()).collect();
             Self {
+                current_length: text.len(),
                 text,
                 changed_chars,
                 size: (0, 0),
                 listener,
                 align,
+                layout: vec![0; 1], // Initialize with a single line
             }
         }
 
@@ -161,17 +164,24 @@ pub mod text {
         }
 
         pub fn append_text(&mut self, text: &str) {
-            let start_index = self.text.len();
-            self.text.extend(text.chars());
-            for i in start_index..self.text.len() {
-                self.changed_chars.push(i);
+            for (i, c) in text.chars().enumerate() {
+                self.changed_chars.push(self.current_length + i);
+                if self.current_length + i >= self.text.len() {
+                    self.text.push(c);
+                } else {
+                    self.text[self.current_length + i] = c;
+                }
             }
+        
+            self.recompute_layout_from(self.current_length);
+            self.current_length += text.len();
         }
 
         pub fn append_char(&mut self, c: char) {
-            let index = self.text.len();
             self.text.push(c);
-            self.changed_chars.push(index);
+            self.changed_chars.push(self.current_length);
+            self.recompute_layout_from(self.current_length);
+            self.current_length += 1;
         }
 
         pub fn remove_text(&mut self, start: usize, end: usize) {
@@ -181,11 +191,81 @@ pub mod text {
             for i in start..end {
                 self.text[i] = ' ';
                 self.changed_chars.push(i);
+                self.recompute_layout_from(start);
+            }
+            if end == self.current_length {
+                self.current_length = start;
             }
         }
 
         pub fn text_len(&self) -> usize {
             self.text.len()
+        }
+
+        fn recompute_layout_from(&mut self, start: usize) {
+            let start = if start > 0 { start - 1 } else { 0 };
+            if let Some((x, y, c)) = self.get_char_placement(start) {
+                let mut line_width = x;
+                let mut iter = self.text[start..].iter();
+                self.layout.pop();
+
+                // initial line
+                for c in &mut iter {
+                    if *c == '\n' || line_width >= self.size.0 {
+                        self.layout.push(line_width);
+                        line_width = 0;
+                        break;
+                    } else {
+                        line_width += 1;
+                    }
+                }
+
+                for c in &mut iter {
+                    if *c == '\n' || line_width >= self.size.0 {
+                        self.layout.push(line_width);
+                        line_width = 0;
+                    } else {
+                        line_width += 1;
+                    }
+                }
+
+
+            if line_width > 0 {
+                self.layout.push(line_width);
+            }
+            }
+        }
+
+        fn recompute_layout(&mut self) {
+            self.layout.clear();
+            let mut line_width = 0;
+            for (i, &c) in self.text.iter().enumerate() {
+                if c == '\n' || line_width >= self.size.0 {
+                    self.layout.push(line_width);
+                    line_width = 0;
+                } else {
+                    line_width += 1;
+                }
+            }
+            if line_width > 0 {
+                self.layout.push(line_width);
+            }
+        }
+
+        fn get_char_placement(&self, index: usize) -> Option<(u16, u16, char)> {
+            let mut internal_index = index;
+            for (line, line_width) in self.layout.iter().enumerate() {
+                if internal_index < *line_width as usize {
+                    let offset = match self.align {
+                        TextAlign::Left => 0,
+                        TextAlign::Center => self.size.0.saturating_sub(*line_width) / 2,
+                        TextAlign::Right => self.size.0.saturating_sub(*line_width),
+                    };
+                    return Some((internal_index as u16 + offset, line as u16, self.text[index])); // TODO: fix indexing. See test centered_text
+                }
+                internal_index -= *line_width as usize;
+            }
+            None
         }
     }
 
@@ -203,85 +283,21 @@ pub mod text {
                 return;
             }
 
-            let mut line: u16 = 0;
-            let mut current_line_text: Vec<char> = Vec::new();
-            let align = &self.align;
-            let text = &self.text;
-            let width = size.0 as usize;
-
-            for i in self.changed_chars.drain(..) {
-                if line >= size.1 {
-                    break;
-                }
-
-                let ch = text[i];
-
-                // Handle newlines
-                if ch == '\n' {
-                    // Output current line with alignment
-                    let line_width = current_line_text.len();
-                    let offset = match align {
-                        TextAlign::Left => 0,
-                        TextAlign::Center => width.saturating_sub(line_width) / 2,
-                        TextAlign::Right => width.saturating_sub(line_width),
-                    };
-
-                    for (j, &c) in current_line_text.iter().enumerate() {
-                        let final_column = j + offset;
-                        if final_column < width {
-                            out.push((final_column as u16, line, c));
-                        }
-                    }
-
-                    line += 1;
-                    current_line_text.clear();
-                    continue;
-                }
-
-                // Check if adding this character would exceed the width
-                if current_line_text.len() >= width {
-                    // Output current line with alignment
-                    let line_width = current_line_text.len();
-                    let offset = match align {
-                        TextAlign::Left => 0,
-                        TextAlign::Center => width.saturating_sub(line_width) / 2,
-                        TextAlign::Right => width.saturating_sub(line_width),
-                    };
-
-                    for (j, &c) in current_line_text.iter().enumerate() {
-                        let final_column = j + offset;
-                        if final_column < width {
-                            out.push((final_column as u16, line, c));
-                        }
-                    }
-
-                    line += 1;
-                    current_line_text.clear();
-                }
-
-                current_line_text.push(ch);
+            let changed_chars = self.changed_chars.drain(..).collect::<Vec<_>>();
+            for c in &changed_chars {
+                dbg!(self.get_char_placement(*c));
+                dbg!(*c);
             }
-
-            // Output last line if not empty
-            if !current_line_text.is_empty() && line < size.1 {
-                let line_width = current_line_text.len();
-                let offset = match align {
-                    TextAlign::Left => 0,
-                    TextAlign::Center => width.saturating_sub(line_width) / 2,
-                    TextAlign::Right => width.saturating_sub(line_width),
-                };
-
-                for (j, &c) in current_line_text.iter().enumerate() {
-                    let final_column = j + offset;
-                    if final_column < width {
-                        out.push((final_column as u16, line, c));
-                    }
-                }
-            }
+            let changes = changed_chars
+                .into_iter()
+                .filter_map(|i| self.get_char_placement(i));
+            out.append(&mut changes.collect());
         }
 
-    fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
+        fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
             if let crate::Event::Resize(w, h) = event {
+                self.size = (w, h);
+                self.recompute_layout();
                 self.changed_chars = (0..self.text.len()).collect();
             }
             if self.listener.is_listening_for(event.into()) {
@@ -295,29 +311,52 @@ pub mod text {
 #[cfg(test)]
 mod factory_widgets_tests {
     use super::text::*;
-    use crate::{WidgetBuilder, WidgetPlacement, factory_widgets::Listener, test::*, *};
+    use crate::{factory_widgets::Listener, test::*, WidgetBuilder, WidgetPlacement, *};
 
     #[test]
     fn adding_and_removing_text() {
         let mut changed = Vec::new();
         let mut text_box = TextBox::new("123", Listener::empty(), TextAlign::Left);
+
+        text_box.on_event(Event::Resize(16, 1), &mut ActionList::new());
+
         text_box.append_char('4');
         text_box.append_text("567");
-        text_box.get_changed_chars((16,1), &mut changed);
-        assert_eq!(changed, (0..7).into_iter().map(|i| (i as u16, 0, char::from_digit(i + 1, 10).unwrap()) ).collect::<Vec<_>>());
+        text_box.get_changed_chars((16, 1), &mut changed);
+        assert_eq!(
+            changed,
+            (0..7)
+                .into_iter()
+                .map(|i| (i as u16, 0, char::from_digit(i + 1, 10).unwrap()))
+                .collect::<Vec<_>>()
+        );
 
         changed.drain(..);
-        text_box.get_changed_chars((16,1), &mut changed);
+        text_box.get_changed_chars((16, 1), &mut changed);
         assert!(changed.is_empty());
 
         text_box.remove_text(text_box.text_len() - 3, text_box.text_len());
-        text_box.get_changed_chars((16,1), &mut changed);
-        assert_eq!(changed, (4..7).into_iter().map(|i| ( i as u16, 0, ' ') ).collect::<Vec<_>>());
+        text_box.get_changed_chars((16, 1), &mut changed);
+        assert_eq!(
+            changed,
+            (4..7)
+                .into_iter()
+                .map(|i| (i as u16, 0, ' '))
+                .collect::<Vec<_>>()
+        );
 
         changed.drain(..);
         text_box.append_text("56");
-        text_box.get_changed_chars((16,1), &mut changed);
-        assert_eq!(changed, (4..6).into_iter().map(|i| (i as u16, 0, char::from_digit(i + 1, 10).unwrap()) ).collect::<Vec<_>>());
+        text_box.get_changed_chars((16, 1), &mut changed);
+        assert_eq!(
+            changed,
+            (4..6)
+                .into_iter()
+                .map(|i| (i as u16, 0, char::from_digit(i + 1, 10).unwrap()))
+                .collect::<Vec<_>>()
+        );
+
+        // TODO: test with newline
     }
 
     #[test]
@@ -329,6 +368,7 @@ mod factory_widgets_tests {
             TextAlign::Center,
         ))
         .build();
+    
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
@@ -347,6 +387,7 @@ mod factory_widgets_tests {
             TextAlign::Center,
         ))
         .build();
+        text_box.edit().on_event(Event::Resize(25, 2), &mut ActionList::new());
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
