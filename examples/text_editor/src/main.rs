@@ -35,7 +35,7 @@ fn console_println(string: &str) {
 
 fn on_event(event: cgi::Event, text_box: &mut cgi::factory_widgets::text::TextBox) {
     if let Event::KeyPress(kc) = event {
-        console_println(&format!("Key pressed event {:?}", kc));
+        console_println(&format!("Key pressed event {:?} | text: {} | len {}", kc, text_box.text(), text_box.text_len()));
         match kc {
             KeyCode::Char(c) => {
                 text_box.append_char(c);

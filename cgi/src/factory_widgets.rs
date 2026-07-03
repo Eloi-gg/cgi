@@ -149,6 +149,10 @@ pub mod text {
             }
         }
 
+        pub fn text(&self) -> String {
+            self.text.iter().collect()
+        }
+
         pub fn set_text(&mut self, text: &str) {
             for (i, c) in text.chars().enumerate() {
                 if self.text[i] != c {
@@ -172,13 +176,17 @@ pub mod text {
                     self.text[self.current_length + i] = c;
                 }
             }
-        
+
             self.recompute_layout_from(self.current_length);
             self.current_length += text.len();
         }
 
         pub fn append_char(&mut self, c: char) {
-            self.text.push(c);
+            if self.current_length >= self.text.len() {
+                self.text.push(c);
+            } else {
+                self.text[self.current_length] = c;
+            }
             self.changed_chars.push(self.current_length);
             self.recompute_layout_from(self.current_length);
             self.current_length += 1;
@@ -229,10 +237,9 @@ pub mod text {
                     }
                 }
 
-
-            if line_width > 0 {
-                self.layout.push(line_width);
-            }
+                if line_width > 0 {
+                    self.layout.push(line_width);
+                }
             }
         }
 
@@ -377,6 +384,47 @@ mod factory_widgets_tests {
     }
 
     #[test]
+    fn adding_and_removing_text_2() {
+        let mut output = TestOutput::<16, 1>::new();
+        let mut text_box = WidgetBuilder::new(TextBox::new(
+            "123",
+            super::Listener::empty(),
+            TextAlign::Left,
+        ))
+        .build();
+
+        let placement = WidgetPlacement::fullscreen();
+        let layout = Layout::new().with_widget(&text_box, placement);
+
+        {
+            let mut edit = text_box.edit();
+            edit.on_event(Event::Resize(16, 1), &mut ActionList::new());
+            edit.append_char('4');
+            edit.append_text("567");
+        }
+
+        let rendered_layout = layout.render(16, 1);
+        for _ in 0..3 {
+            {
+                let mut edit = text_box.edit();
+                let len = edit.text_len();
+                edit.remove_text(len - 1, len);
+            }
+            rendered_layout.render_to_output(&mut output);
+        }
+
+        for _ in 0..3 {
+            let mut edit = text_box.edit();
+            edit.on_event(Event::Resize(16, 1), &mut ActionList::new());
+            edit.append_char('x');
+        }
+            rendered_layout.render_to_output(&mut output);
+        let rendered_text = output.to_string();
+
+        assert_eq!(rendered_text, "1234xxx         ");
+    }
+
+    #[test]
     fn centered_text() {
         let mut output = TestOutput::<25, 1>::new();
         let mut text_box = WidgetBuilder::new(TextBox::new(
@@ -385,8 +433,10 @@ mod factory_widgets_tests {
             TextAlign::Center,
         ))
         .build();
-        text_box.edit().on_event(Event::Resize(25, 2), &mut ActionList::new());
-    
+        text_box
+            .edit()
+            .on_event(Event::Resize(25, 2), &mut ActionList::new());
+
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
@@ -405,7 +455,9 @@ mod factory_widgets_tests {
             TextAlign::Center,
         ))
         .build();
-        text_box.edit().on_event(Event::Resize(25, 2), &mut ActionList::new());
+        text_box
+            .edit()
+            .on_event(Event::Resize(25, 2), &mut ActionList::new());
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
@@ -424,7 +476,9 @@ mod factory_widgets_tests {
             TextAlign::Right,
         ))
         .build();
-        text_box.edit().on_event(Event::Resize(25, 2), &mut ActionList::new());
+        text_box
+            .edit()
+            .on_event(Event::Resize(25, 2), &mut ActionList::new());
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
@@ -443,7 +497,9 @@ mod factory_widgets_tests {
             TextAlign::Right,
         ))
         .build();
-        text_box.edit().on_event(Event::Resize(25, 2), &mut ActionList::new());
+        text_box
+            .edit()
+            .on_event(Event::Resize(25, 2), &mut ActionList::new());
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
