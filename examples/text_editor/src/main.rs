@@ -45,6 +45,8 @@ fn on_event(event: cgi::Event, text_box: &mut cgi::factory_widgets::text::TextBo
             }
             _ => {}
         }
+    } else {
+        console_println(&format!("Event {:?}", event));
     }
 }
 

@@ -57,14 +57,6 @@ impl Application {
     }
 
     fn size_changed(&mut self, new_x: u16, new_y: u16) {
-        for widget in self.rendered_layout.0.keys() {
-            widget
-                .widget
-                .displayable
-                .write()
-                .unwrap()
-                .on_event(crate::Event::Resize(new_x, new_y), &mut ActionList::new());
-        }
         self.current_layout = (self.behavior)((new_x, new_y));
         self.size = (new_x, new_y);
         self.rendered_layout =
@@ -86,6 +78,15 @@ impl Application {
 
         self.output.flush();
         self.size_changed(cols, rows);
+        for widget in self.rendered_layout.0.keys() {
+            widget
+                .widget
+                .displayable
+                .write()
+                .unwrap()
+                .on_event(crate::Event::Resize(cols, rows), &mut ActionList::new());
+            self.rendered_layout.render_widget_to_output(widget, &mut self.output);
+        }
 
         for _ in 0..500 {
             if poll(std::time::Duration::from_millis(100)).unwrap() {
@@ -118,9 +119,12 @@ impl Application {
                             crate::Action::UpdateWidget => {
                                 self.rendered_layout
                                     .render_widget_to_output(widget, &mut self.output);
+                            },
+                            crate::Action::MoveCursor(move_cmd) => {
+                                todo!()
                             }
                             _ => {
-                                println!("Action: {:?}", action);
+                                println!("Unsupported Action: {:?}", action);
                             }
                         }
                     }

@@ -51,10 +51,31 @@ impl ActionList {
 }
 
 #[derive(Debug)]
-#[repr(u32)]
+pub enum CursorMove {
+    Up(u16),
+    Down(u16),
+    Left(u16),
+    Right(u16),
+    To(u16, u16),
+}
+
+impl Into<String> for CursorMove {
+    fn into(self) -> String {
+        match self {
+            CursorMove::Up(x) => format!("\x1b[{}A", x),
+            CursorMove::Down(x) => format!("\x1b[{}B", x),
+            CursorMove::Left(x) => format!("\x1b[{}D", x),
+            CursorMove::Right(x) => format!("\x1b[{}C", x),
+            CursorMove::To(x, y) => format!("\x1b[{};{}H", y, x),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum Action {
     UpdateWidget,
     UpdateAll,
+    MoveCursor(CursorMove),
 }
 
 impl std::ops::BitOr<Action> for ActionList {
