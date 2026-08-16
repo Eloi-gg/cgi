@@ -311,6 +311,12 @@ mod outlines {
         let widget = WidgetBuilder::new(text_box)
             .with_outline(OutlineStyle::Thick)
             .build();
+        widget
+            .displayable
+            .write()
+            .unwrap()
+            .on_event(crate::Event::Resize(16, 8), &mut ActionList::new());
+        
         let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
         println!("{}", rendered_text);
         crate::test::assert_match_with_test_file(&rendered_text, "7_borders.txt");

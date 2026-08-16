@@ -9,7 +9,7 @@ mod inner {
     use crate::{widget::Widget, Displayable, Event};
 
     pub(crate) static TESTS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/");
-    
+
     /// A simple widget that fills its space with a single character.
     /// Useful for testing rendering and layout.
     pub struct FillWidget {
@@ -33,7 +33,7 @@ mod inner {
             }
         }
 
-    fn on_event(&mut self, event: Event, actions: &mut crate::ActionList) {
+        fn on_event(&mut self, event: Event, actions: &mut crate::ActionList) {
             // No-op for testing
         }
     }
@@ -175,7 +175,23 @@ mod inner {
             );
         let expected_result =
             std::io::read_to_string(expected_result).expect("Failed to read test file content");
-        assert_eq!(text, expected_result);
+
+        let mut diff = 0;
+        for i in 0..text.len().min(expected_result.len()) {
+            if text.chars().nth(i) != expected_result.chars().nth(i) {
+                diff = i;
+            }
+        }
+        assert_eq!(
+            text,
+            expected_result,
+            "Diff at index: {} ({}) but expected ({}) out of length {} vs {}",
+            diff,
+            text.chars().nth(diff).unwrap_or('?'),
+            expected_result.chars().nth(diff).unwrap_or('?'),
+            text.len(),
+            expected_result.len()
+        );
     }
 
     pub mod strings {
@@ -187,7 +203,7 @@ mod inner {
                     LOREM_IPSUM_LONG =
                         "Lorem ipsum dolor sit amet, consectetur adipiscing elit\n".repeat(15);
                 }
-                return LOREM_IPSUM_LONG.as_str()
+                return LOREM_IPSUM_LONG.as_str();
             }
         }
     }

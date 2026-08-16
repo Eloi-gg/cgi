@@ -202,7 +202,9 @@ impl Output for LinuxOutput {
 
 #[cfg(test)]
 mod rendering_tests {
-    use super::*;
+    use std::println;
+
+use super::*;
     use crate::coordinate::Coordinate::*;
     use crate::factory_widgets::{progression::*, text::*, Listener};
     use crate::test::*;
@@ -423,7 +425,6 @@ mod rendering_tests {
         output.clear();
         layout.render_to_output(&mut output);
         let rendered_text = output.to_string();
-
         crate::test::assert_match_with_test_file(&rendered_text, "9_titles_full");
     }
 }
