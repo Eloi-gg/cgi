@@ -1,6 +1,7 @@
 use core::panic;
+use std::collections::HashMap;
 
-use crate::layout::ComputedWidgetPlacement;
+use crate::{layout::ComputedWidgetPlacement, widget::WidgetHdl};
 
 enum OS {
     Windows,
@@ -45,6 +46,32 @@ pub(crate) trait Output {
 // }
 
 impl crate::layout::RenderedLayout {
+    pub(crate) fn new(mut layout: HashMap<WidgetHdl, ComputedWidgetPlacement>) -> crate::layout::RenderedLayout {
+        let mut actions = crate::ActionList::new();
+        for (widget, placement) in layout.iter_mut() {
+            let inside_placement = if let Ok(data) = widget.widget.data.lock() {
+                if let Some(_) = (*data).outline {
+                    ComputedWidgetPlacement {
+                        x: placement.x + 1,
+                        y: placement.y + 1,
+                        width: placement.width - 2,
+                        height: placement.height - 2,
+                    }
+                } else {
+                    *placement
+                }
+            } else {
+                *placement
+            };
+            widget.widget.displayable.write().unwrap().on_event(
+                crate::Event::Resize(inside_placement.width as u16, inside_placement.height as u16),
+                &mut actions,
+            );
+        }
+
+        Self(layout)
+    }
+
     pub(crate) fn render_to_output(&self, output: &mut dyn Output) {
         let mut global_changes = Vec::new();
 
@@ -62,7 +89,10 @@ impl crate::layout::RenderedLayout {
         widget: &crate::widget::WidgetHdl,
         output: &mut dyn Output,
     ) {
-        let placement = self.0.get(widget).expect("Widget not found in rendered layout");
+        let placement = self
+            .0
+            .get(widget)
+            .expect("Widget not found in rendered layout");
         let mut global_changes = Vec::new();
         self.render_widget(widget, placement, &mut global_changes);
         for (x, y, c) in global_changes {
@@ -204,7 +234,7 @@ impl Output for LinuxOutput {
 mod rendering_tests {
     use std::println;
 
-use super::*;
+    use super::*;
     use crate::coordinate::Coordinate::*;
     use crate::factory_widgets::{progression::*, text::*, Listener};
     use crate::test::*;
@@ -348,7 +378,7 @@ use super::*;
     #[test]
     fn title() {
         let text_box = crate::factory_widgets::text::TextBox::new(
-            self::test::strings::lorem_ipsum_long(),
+            &self::test::strings::lorem_ipsum_long(),
             factory_widgets::Listener::empty(),
             factory_widgets::text::TextAlign::Left,
         );
@@ -356,6 +386,7 @@ use super::*;
             .with_outline(symbols::OutlineStyle::Thick)
             .with_title("Title")
             .build();
+
         let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
         println!("{}", rendered_text);
         crate::test::assert_match_with_test_file(&rendered_text, "8_title.txt");

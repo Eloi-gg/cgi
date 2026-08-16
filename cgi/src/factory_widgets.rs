@@ -124,6 +124,12 @@ pub mod text {
         Right,
     }
 
+    pub enum Wrapping {
+        Off,
+        PerWord,
+        PerLetter
+    }
+
     pub struct TextBox {
         text: Vec<char>,
         layout: Vec<u16>,
@@ -132,12 +138,14 @@ pub mod text {
         current_length: usize,
         listener: Listener<Self>,
         align: TextAlign,
+        wrapping: Wrapping
     }
 
     impl TextBox {
         pub fn new(text: &str, listener: Listener<Self>, align: TextAlign) -> Self {
             let text: Vec<char> = text.chars().collect();
             let changed_chars: Vec<usize> = (0..text.len()).collect();
+
             Self {
                 current_length: text.len(),
                 text,
@@ -146,6 +154,7 @@ pub mod text {
                 listener,
                 align,
                 layout: vec![0; 1], // Initialize with a single line
+                wrapping: Wrapping::PerLetter
             }
         }
 
@@ -210,73 +219,67 @@ pub mod text {
             self.current_length
         }
 
-        fn recompute_layout_from(&mut self, start: usize) {
-            let start = start.min(self.layout.len());
-            if let Some((x, y, c)) = self.get_char_placement(start) {
-                let mut line_width = x;
-                let mut iter = self.text[start..].iter();
-                self.layout.pop();
-
-                // initial line
-                for c in &mut iter {
-                    if *c == '\n' || line_width >= self.size.0 {
-                        self.layout.push(line_width);
-                        line_width = 0;
-                        break;
-                    } else {
-                        line_width += 1;
-                    }
-                }
-
-                for c in &mut iter {
-                    if *c == '\n' || line_width >= self.size.0 {
-                        self.layout.push(line_width);
-                        line_width = 0;
-                    } else {
-                        line_width += 1;
-                    }
-                }
-
-                if line_width > 0 {
-                    self.layout.push(line_width);
-                }
-            }
+        fn recompute_layout_from(&mut self, _start: usize) {
+            self.recompute_layout();
         }
 
         fn recompute_layout(&mut self) {
             self.layout.clear();
+            if self.size.0 == 0 {
+                return;
+            }
+
             let mut line_width = 0;
-            for (i, &c) in self.text.iter().enumerate() {
-                if c == '\n' || line_width >= self.size.0 {
+            for &c in &self.text {
+                if c == '\n'  {
                     self.layout.push(line_width);
                     line_width = 0;
                 } else {
+                    if line_width >= self.size.0 {
+                        self.layout.push(self.size.0);
+                        line_width = 0;
+                    }
                     line_width += 1;
                 }
             }
-            if line_width > 0 {
+
+            if line_width > 0 || self.layout.is_empty() {
                 self.layout.push(line_width);
             }
         }
 
         fn get_char_placement(&self, index: usize) -> Option<(u16, u16, char)> {
-            let mut internal_index = index;
-            for (line, line_width) in self.layout.iter().enumerate() {
-                if internal_index < *line_width as usize {
+            if index >= self.text.len() || self.text[index] == '\n' {
+                return None;
+            }
+
+            let visual_index = self.text[..index].iter().filter(|&&c| c != '\n').count() as u16;
+            let mut line_start = 0;
+
+            for (line, &line_width) in self.layout.iter().enumerate() {
+                let line_end = line_start + line_width;
+                if visual_index < line_end {
+                    let x = visual_index - line_start;
                     let offset = match self.align {
                         TextAlign::Left => 0,
-                        TextAlign::Center => self.size.0.saturating_sub(*line_width) / 2,
-                        TextAlign::Right => self.size.0.saturating_sub(*line_width),
+                        TextAlign::Center => self.size.0.saturating_sub(line_width) / 2,
+                        TextAlign::Right => self.size.0.saturating_sub(line_width),
                     };
-                    if let Some(c) = self.text.iter().filter(|c| **c != '\n').nth(index) {
-                        return Some((internal_index as u16 + offset, line as u16, *c));
-                    } else {
-                        return None;
-                    }
+                    return self
+                        .text
+                        .iter()
+                        .filter(|&&c| c != '\n')
+                        .nth(visual_index as usize)
+                        .map(|c| (x + offset, line as u16, *c));
                 }
-                internal_index -= *line_width as usize;
+                line_start = line_end;
             }
+
             None
+        }
+
+        pub fn set_wrapping_mode(&mut self, wrapping: Wrapping) {
+            self.wrapping = wrapping
         }
     }
 
@@ -296,11 +299,14 @@ pub mod text {
 
             let mut changed_chars = self.changed_chars.drain(..).collect::<Vec<_>>();
             changed_chars.sort();
-            changed_chars.dedup();
-            let changes = changed_chars
+            changed_chars.dedup(); // TODO: very innefficient
+            let mut changes = changed_chars
                 .into_iter()
-                .filter_map(|i| self.get_char_placement(i));
-            out.append(&mut changes.collect());
+                .filter_map(|i| self.get_char_placement(i))
+                .filter(|(x, y, _)| *x < size.0 && *y < size.1)
+                .collect::<Vec<_>>();
+
+            out.append(&mut changes);
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
@@ -350,7 +356,7 @@ mod factory_widgets_tests {
             changed,
             (4..7)
                 .into_iter()
-                .map(|i| (i as u16, 0, ' '))
+                .map(|i| (i, 0, ' '))
                 .collect::<Vec<_>>()
         );
 
@@ -509,6 +515,23 @@ mod factory_widgets_tests {
         assert_match_with_test_file(&rendered_text, "factory_widgets/right_multiline_text");
     }
 
+    
+    #[test]
+    fn short_text() {
+        let text_box = crate::factory_widgets::text::TextBox::new(
+            self::test::strings::lorem_ipsum_short(),
+            Listener::empty(),
+            factory_widgets::text::TextAlign::Left,
+        );
+        let widget = WidgetBuilder::new(text_box)
+            .with_outline(symbols::OutlineStyle::Thick)
+            .build();
+        
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
+        println!("{}", rendered_text);
+        crate::test::assert_match_with_test_file(&rendered_text, "factory_widgets/short_text_letter_wrap.txt");
+    }
+
     #[test]
     fn loading_bar() {
         let increment = 1.0 / 16.0;
@@ -547,5 +570,29 @@ mod factory_widgets_tests {
             assert_eq!(rendered_text, expected_output[step]);
             output.clear();
         }
+    }
+
+    fn no_wrapping_text() {
+        let mut text_box = crate::factory_widgets::text::TextBox::new(
+            self::test::strings::lorem_ipsum_short(),
+            Listener::empty(),
+            factory_widgets::text::TextAlign::Left,
+        );
+        text_box.set_wrapping_mode(Wrapping::Off);
+        let widget = WidgetBuilder::new(text_box)
+            .with_outline(symbols::OutlineStyle::Thick)
+            .build();
+        
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
+        println!("{}", rendered_text);
+        crate::test::assert_match_with_test_file(&rendered_text, "factory_widgets/short_text_no_wrap.txt");
+    }
+
+    fn wrapping_letter_text() {
+        todo!("Test with wrapping in all three alignment modes")
+    }
+
+    fn wrapping_word_text() {
+        todo!("Test with wrapping in all three alignment modes")
     }
 }

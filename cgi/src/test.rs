@@ -6,7 +6,7 @@
 mod inner {
     pub(crate) use crate::rendering::TestOutput;
 
-    use crate::{widget::Widget, Displayable, Event};
+    use crate::{Displayable, Event, widget::Widget};
 
     pub(crate) static TESTS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/");
 
@@ -195,16 +195,14 @@ mod inner {
     }
 
     pub mod strings {
-        static mut LOREM_IPSUM_LONG: String = String::new();
 
-        pub fn lorem_ipsum_long() -> &'static str {
-            unsafe {
-                if LOREM_IPSUM_LONG.is_empty() {
-                    LOREM_IPSUM_LONG =
-                        "Lorem ipsum dolor sit amet, consectetur adipiscing elit\n".repeat(15);
-                }
-                return LOREM_IPSUM_LONG.as_str();
-            }
+        pub fn lorem_ipsum_long() -> String {
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit\n"
+                .repeat(15)
+        }
+
+        pub fn lorem_ipsum_short() -> &'static str {
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit\n"
         }
     }
 }

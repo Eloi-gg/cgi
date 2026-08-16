@@ -7,7 +7,7 @@ pub struct Layout {
     pub(crate) layout: HashMap<WidgetHdl, WidgetPlacement>,
 }
 
-pub(crate) struct RenderedLayout(pub HashMap<WidgetHdl, ComputedWidgetPlacement>);
+pub(crate) struct RenderedLayout(pub(crate) HashMap<WidgetHdl, ComputedWidgetPlacement>);
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct WidgetPlacement {
@@ -94,6 +94,7 @@ impl WidgetPlacement {
         }
     }
 
+    /// Positive values expand the widget, negative values shrink it.
     pub fn expand_or_shrink<C: Into<Coordinate>>(&self, x: C, y: C) -> Self {
         let x = x.into();
         let y = y.into();
@@ -165,17 +166,24 @@ impl Layout {
         }
     }
 
-    pub fn with_widget(mut self, widget: &Widget<impl Displayable + 'static>, placement: WidgetPlacement) -> Self {
+    pub fn with_widget(
+        mut self,
+        widget: &Widget<impl Displayable + 'static>,
+        placement: WidgetPlacement,
+    ) -> Self {
         self.add_widget(widget, placement);
         self
     }
 
-    pub fn add_widget(&mut self, widget: &Widget<impl Displayable + 'static>, placement: WidgetPlacement) {
-        let widget_hdl = WidgetHdl { widget: widget.as_dyn() };
-        self.layout.insert(
-            widget_hdl,
-            placement
-        );
+    pub fn add_widget(
+        &mut self,
+        widget: &Widget<impl Displayable + 'static>,
+        placement: WidgetPlacement,
+    ) {
+        let widget_hdl = WidgetHdl {
+            widget: widget.as_dyn(),
+        };
+        self.layout.insert(widget_hdl, placement);
     }
 
     pub(crate) fn render(&self, size_x: i32, size_y: i32) -> RenderedLayout {
@@ -198,7 +206,7 @@ impl Layout {
             );
         }
 
-        RenderedLayout(rendered_layout)
+        RenderedLayout::new(rendered_layout)
     }
 }
 
@@ -210,7 +218,11 @@ impl std::fmt::Debug for ComputedWidgetPlacement {
 
 impl std::fmt::Debug for WidgetPlacement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({:?},{:?}) {:?}*{:?}", self.tl.0, self.tl.1, self.width, self.height)
+        write!(
+            f,
+            "({:?},{:?}) {:?}*{:?}",
+            self.tl.0, self.tl.1, self.width, self.height
+        )
     }
 }
 
@@ -235,7 +247,7 @@ pub(crate) mod tests {
     mod layout {
         use crate::layout;
 
-use super::super::*;
+        use super::super::*;
         use super::Coordinate::*;
 
         // Looks through the computed_layout to find a Dummy widget with its data matching widget_data
@@ -274,7 +286,8 @@ use super::super::*;
             let mut layout = Layout::new();
             let mut dg = super::DummyGenerator::new();
             let widgets = dg.get_n_widgets(1);
-            let placement = WidgetPlacement::new(Absolute(10), Absolute(20), Relative(1.0), Relative(0.8));
+            let placement =
+                WidgetPlacement::new(Absolute(10), Absolute(20), Relative(1.0), Relative(0.8));
             layout.add_widget(&widgets[0], placement);
 
             let w1_layout_data = unsafe { get_widget(&layout, 0) };
@@ -300,7 +313,7 @@ use super::super::*;
             let widgets = dg.get_n_widgets(6);
 
             let mut placements = [WidgetPlacement::default(); 6];
-            let fs = WidgetPlacement::fullscreen().expand_or_shrink(5, 5);
+            let fs = WidgetPlacement::fullscreen().expand_or_shrink(-5, -5);
             fs.split(3, 2, &mut placements);
 
             for i in 0..6 {
@@ -312,7 +325,10 @@ use super::super::*;
             assert_eq!(fs.width, Hybrid(-10, 1.0));
             assert_eq!(fs.height, Hybrid(-10, 1.0));
             for i in 0..6 {
-                let widget_layout = unsafe { get_widget_from_rendered_layout(&rendered_layout, i) }.unwrap();
+                let widget_layout =
+                    unsafe { get_widget_from_rendered_layout(&rendered_layout, i) }.unwrap();
+                assert_eq!(widget_layout.x, 5 + ((i / 2) as i32 * 100));
+                assert_eq!(widget_layout.y, 5 + ((i % 2) as i32 * 100));
                 assert_eq!(widget_layout.width, 100);
                 assert_eq!(widget_layout.height, 100);
             }

@@ -304,7 +304,7 @@ mod outlines {
     #[test]
     fn long_text() {
         let text_box = crate::factory_widgets::text::TextBox::new(
-            self::test::strings::lorem_ipsum_long(),
+            &self::test::strings::lorem_ipsum_long(),
             Listener::empty(),
             factory_widgets::text::TextAlign::Left,
         );
@@ -315,7 +315,7 @@ mod outlines {
             .displayable
             .write()
             .unwrap()
-            .on_event(crate::Event::Resize(16, 8), &mut ActionList::new());
+            .on_event(crate::Event::Resize(14, 6), &mut ActionList::new());
         
         let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
         println!("{}", rendered_text);
@@ -327,7 +327,7 @@ mod outlines {
         use crate::*;
         let mut output = crate::rendering::TestOutput::<48, 16>::new();
         let text_box = crate::factory_widgets::text::TextBox::new(
-            self::test::strings::lorem_ipsum_long(),
+            &self::test::strings::lorem_ipsum_long(),
             Listener::empty(),
                 factory_widgets::text::TextAlign::Left,
         );
