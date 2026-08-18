@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use crate::{Displayable, EventType};
 
@@ -116,6 +116,8 @@ pub mod progression {
 }
 
 pub mod text {
+    use std::collections::{BTreeMap, HashMap};
+
     use super::*;
 
     pub enum TextAlign {
@@ -127,24 +129,25 @@ pub mod text {
     pub enum Wrapping {
         Off,
         PerWord,
-        PerLetter
+        PerLetter,
     }
 
     pub struct TextBox {
         text: Vec<char>,
         layout: Vec<u16>,
-        changed_chars: Vec<usize>, // points to chars in the text
-        size: (u16, u16),          // Remove ?
+        line_breaks: Vec<usize>,
+        changed_chars: BTreeSet<usize>, // points to chars in the text
+        size: (u16, u16),               // Remove ?
         current_length: usize,
         listener: Listener<Self>,
         align: TextAlign,
-        wrapping: Wrapping
+        wrapping: Wrapping,
     }
 
     impl TextBox {
         pub fn new(text: &str, listener: Listener<Self>, align: TextAlign) -> Self {
             let text: Vec<char> = text.chars().collect();
-            let changed_chars: Vec<usize> = (0..text.len()).collect();
+            let changed_chars: BTreeSet<usize> = (0..text.len()).collect();
 
             Self {
                 current_length: text.len(),
@@ -154,7 +157,8 @@ pub mod text {
                 listener,
                 align,
                 layout: vec![0; 1], // Initialize with a single line
-                wrapping: Wrapping::PerLetter
+                line_breaks: vec![0],
+                wrapping: Wrapping::PerLetter,
             }
         }
 
@@ -166,19 +170,19 @@ pub mod text {
             for (i, c) in text.chars().enumerate() {
                 if self.text[i] != c {
                     self.text[i] = c;
-                    self.changed_chars.push(i);
+                    self.changed_chars.insert(i);
                 }
             }
 
             for i in text.len()..self.text.len() {
                 self.text[i] = ' ';
-                self.changed_chars.push(i);
+                self.changed_chars.insert(i);
             }
         }
 
         pub fn append_text(&mut self, text: &str) {
             for (i, c) in text.chars().enumerate() {
-                self.changed_chars.push(self.current_length + i);
+                self.changed_chars.insert(self.current_length + i);
                 if self.current_length + i >= self.text.len() {
                     self.text.push(c);
                 } else {
@@ -196,7 +200,7 @@ pub mod text {
             } else {
                 self.text[self.current_length] = c;
             }
-            self.changed_chars.push(self.current_length);
+            self.changed_chars.insert(self.current_length);
             self.recompute_layout_from(self.current_length);
             self.current_length += 1;
         }
@@ -207,7 +211,7 @@ pub mod text {
             }
             for i in start..end {
                 self.text[i] = ' ';
-                self.changed_chars.push(i);
+                self.changed_chars.insert(i);
                 self.recompute_layout_from(start);
             }
             if end == self.current_length {
@@ -225,29 +229,53 @@ pub mod text {
 
         fn recompute_layout(&mut self) {
             self.layout.clear();
-            if self.size.0 == 0 {
-                return;
-            }
 
             let mut line_width = 0;
-            for &c in &self.text {
-                if c == '\n'  {
-                    self.layout.push(line_width);
-                    line_width = 0;
-                } else {
-                    if line_width >= self.size.0 {
-                        self.layout.push(self.size.0);
-                        line_width = 0;
-                    }
-                    line_width += 1;
-                }
-            }
 
-            if line_width > 0 || self.layout.is_empty() {
-                self.layout.push(line_width);
+            self.line_breaks = self
+                .text
+                .iter()
+                .enumerate()
+                .filter_map(|(i, c)| if *c == '\n' { Some(i) } else { None })
+                .collect();
+
+            match self.wrapping {
+                Wrapping::Off => {
+                    let mut layout = vec![*self.line_breaks.first().unwrap() as u16];
+                    layout.append(&mut self
+                        .line_breaks
+                        .windows(2)
+                        .map(|pair| (pair[1] - pair[0] - 1) as u16)
+                        .collect());
+                    layout.push((self.current_length - *self.line_breaks.last().unwrap() - 1) as u16);
+                    self.layout = layout;
+                }
+                Wrapping::PerWord => {}
+                Wrapping::PerLetter => {
+                    if self.size.0 == 0 {
+                        return;
+                    }
+                    // TODO: use the line_breaks to avoid recomputing
+                    for &c in &self.text {
+                        if c == '\n' {
+                            self.layout.push(line_width);
+                            line_width = 0;
+                        } else {
+                            if line_width >= self.size.0 {
+                                self.layout.push(self.size.0);
+                                line_width = 0;
+                            }
+                            line_width += 1;
+                        }
+                    }
+                    if line_width > 0 || self.layout.is_empty() {
+                        self.layout.push(line_width);
+                    }
+                }
             }
         }
 
+        // TODO: every call to this function is quite expensive, precompute all text stuff before calling the function many times
         fn get_char_placement(&self, index: usize) -> Option<(u16, u16, char)> {
             if index >= self.text.len() || self.text[index] == '\n' {
                 return None;
@@ -255,31 +283,81 @@ pub mod text {
 
             let visual_index = self.text[..index].iter().filter(|&&c| c != '\n').count() as u16;
             let mut line_start = 0;
+            let character = self
+                .text
+                .iter()
+                .filter(|&&c| c != '\n')
+                .nth(visual_index as usize)
+                .copied();
 
-            for (line, &line_width) in self.layout.iter().enumerate() {
-                let line_end = line_start + line_width;
-                if visual_index < line_end {
-                    let x = visual_index - line_start;
+            if character.is_none() {
+                return None;
+            }
+            let character = character.unwrap();
+
+            match self.wrapping {
+                Wrapping::Off => {
+                    let last = self
+                        .line_breaks
+                        .iter()
+                        .enumerate()
+                        .take_while(|(_, i)| **i < index)
+                        .last();
+
+                    let (expected_line, last_break) = match last {
+                        Some((idx, break_point)) => (1 + idx as usize, *break_point as usize),
+                        None => (0, 0),
+                    };
+                    let mut index_on_line = index - last_break;
+                    if last_break > 0 {
+                        index_on_line -= 1;
+                    }
+                    // Letting one character overflow so that we know if the text is too wide.
+                    // The character will be clipped anyway
+                    if index_on_line > 1 + self.size.0 as usize {
+                        return None;
+                    }
+                    let line_width = self.layout[expected_line].clamp(0, self.size.0);
                     let offset = match self.align {
                         TextAlign::Left => 0,
-                        TextAlign::Center => self.size.0.saturating_sub(line_width) / 2,
-                        TextAlign::Right => self.size.0.saturating_sub(line_width),
+                        TextAlign::Center => self.size.0.saturating_sub(line_width as u16) / 2,
+                        TextAlign::Right => self.size.0.saturating_sub(line_width as u16),
                     };
-                    return self
-                        .text
-                        .iter()
-                        .filter(|&&c| c != '\n')
-                        .nth(visual_index as usize)
-                        .map(|c| (x + offset, line as u16, *c));
+
+                    return Some((
+                        offset + index_on_line as u16,
+                        expected_line as u16,
+                        character,
+                    ));
                 }
-                line_start = line_end;
+                Wrapping::PerWord => todo!(),
+                Wrapping::PerLetter => {
+                    for (line, &line_width) in self.layout.iter().enumerate() {
+                        let line_end = line_start + line_width;
+                        if visual_index < line_end {
+                            let x = visual_index - line_start;
+                            let offset = match self.align {
+                                TextAlign::Left => 0,
+                                TextAlign::Center => self.size.0.saturating_sub(line_width) / 2,
+                                TextAlign::Right => self.size.0.saturating_sub(line_width),
+                            };
+                            return Some((x + offset, line as u16, character));
+                        }
+                        line_start = line_end;
+                    }
+                }
             }
 
             None
         }
 
         pub fn set_wrapping_mode(&mut self, wrapping: Wrapping) {
-            self.wrapping = wrapping
+            self.wrapping = wrapping;
+            self.recompute_layout();
+        }
+
+        pub fn set_align(&mut self, align: TextAlign) {
+            self.align = align;
         }
     }
 
@@ -297,16 +375,43 @@ pub mod text {
                 return;
             }
 
-            let mut changed_chars = self.changed_chars.drain(..).collect::<Vec<_>>();
-            changed_chars.sort();
-            changed_chars.dedup(); // TODO: very innefficient
-            let mut changes = changed_chars
-                .into_iter()
-                .filter_map(|i| self.get_char_placement(i))
-                .filter(|(x, y, _)| *x < size.0 && *y < size.1)
-                .collect::<Vec<_>>();
+            const NO_WRAPPING_POINTS: u16 = 3;
 
-            out.append(&mut changes);
+            let mut width_overflow_line_idx = Vec::new();
+            let mut changes: BTreeMap<(u16, u16), char> = self
+                .changed_chars
+                .iter()
+                .filter_map(|i| self.get_char_placement(*i))
+                .filter(|(x, y, _)| {
+                    if *x == size.0 {
+                        width_overflow_line_idx.push(*y);
+                        false
+                    } else {
+                        *x < size.0 && *y < size.1
+                    }
+                })
+                .map(|(x, y, c)| ((x, y), c))
+                .collect();
+
+            if let Wrapping::Off = self.wrapping {
+                for y in width_overflow_line_idx {
+                    for i in 0..NO_WRAPPING_POINTS {
+                        changes.insert((size.0 - 1 - i, y), '.');
+                    }
+                }
+            }
+
+            self.changed_chars.clear();
+
+            // changes.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1))); // sort by position
+            // changes.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1); // filter for duplicate positions
+
+            out.append(
+                &mut changes
+                    .into_iter()
+                    .map(|(pos, c)| (pos.0, pos.1, c))
+                    .collect::<Vec<_>>(),
+            );
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
@@ -326,7 +431,7 @@ pub mod text {
 #[cfg(test)]
 mod factory_widgets_tests {
     use super::text::*;
-    use crate::{factory_widgets::Listener, test::*, WidgetBuilder, WidgetPlacement, *};
+    use crate::{WidgetBuilder, WidgetPlacement, factory_widgets::Listener, test::*, *};
 
     #[test]
     fn adding_and_removing_text() {
@@ -354,10 +459,7 @@ mod factory_widgets_tests {
         text_box.get_changed_chars((16, 1), &mut changed);
         assert_eq!(
             changed,
-            (4..7)
-                .into_iter()
-                .map(|i| (i, 0, ' '))
-                .collect::<Vec<_>>()
+            (4..7).into_iter().map(|i| (i, 0, ' ')).collect::<Vec<_>>()
         );
 
         changed.drain(..);
@@ -424,7 +526,7 @@ mod factory_widgets_tests {
             edit.on_event(Event::Resize(16, 1), &mut ActionList::new());
             edit.append_char('x');
         }
-            rendered_layout.render_to_output(&mut output);
+        rendered_layout.render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_eq!(rendered_text, "1234xxx         ");
@@ -515,7 +617,6 @@ mod factory_widgets_tests {
         assert_match_with_test_file(&rendered_text, "factory_widgets/right_multiline_text");
     }
 
-    
     #[test]
     fn short_text() {
         let text_box = crate::factory_widgets::text::TextBox::new(
@@ -526,10 +627,13 @@ mod factory_widgets_tests {
         let widget = WidgetBuilder::new(text_box)
             .with_outline(symbols::OutlineStyle::Thick)
             .build();
-        
+
         let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
         println!("{}", rendered_text);
-        crate::test::assert_match_with_test_file(&rendered_text, "factory_widgets/short_text_letter_wrap.txt");
+        crate::test::assert_match_with_test_file(
+            &rendered_text,
+            "factory_widgets/short_text_letter_wrap.txt",
+        );
     }
 
     #[test]
@@ -572,9 +676,14 @@ mod factory_widgets_tests {
         }
     }
 
+    #[test]
     fn no_wrapping_text() {
+        let mut lorem = self::test::strings::lorem_ipsum_short()
+            .to_string()
+            .repeat(2);
+        lorem += "0123456789abcd\nABC\nDEF";
         let mut text_box = crate::factory_widgets::text::TextBox::new(
-            self::test::strings::lorem_ipsum_short(),
+            &lorem,
             Listener::empty(),
             factory_widgets::text::TextAlign::Left,
         );
@@ -582,16 +691,43 @@ mod factory_widgets_tests {
         let widget = WidgetBuilder::new(text_box)
             .with_outline(symbols::OutlineStyle::Thick)
             .build();
-        
+
         let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
-        println!("{}", rendered_text);
-        crate::test::assert_match_with_test_file(&rendered_text, "factory_widgets/short_text_no_wrap.txt");
+        crate::test::assert_match_with_test_file(
+            &rendered_text,
+            "factory_widgets/short_text_no_wrap.txt",
+        );
+
+        widget
+            .displayable
+            .write()
+            .unwrap()
+            .set_align(factory_widgets::text::TextAlign::Right);
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
+        crate::test::assert_match_with_test_file(
+            &rendered_text,
+            "factory_widgets/short_text_no_wrap_right_align.txt",
+        );
+
+        widget
+            .displayable
+            .write()
+            .unwrap()
+            .set_align(factory_widgets::text::TextAlign::Center);
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
+        crate::test::assert_match_with_test_file(
+            &rendered_text,
+            "factory_widgets/short_text_no_wrap_centered.txt",
+        );
     }
+
+    #[test]
 
     fn wrapping_letter_text() {
         todo!("Test with wrapping in all three alignment modes")
     }
 
+    #[test]
     fn wrapping_word_text() {
         todo!("Test with wrapping in all three alignment modes")
     }
