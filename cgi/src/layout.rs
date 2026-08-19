@@ -16,6 +16,13 @@ pub struct WidgetPlacement {
     height: Coordinate,
 }
 
+pub struct WidgetGroupPlacement {
+    //TODO REMOVE
+    placement: WidgetPlacement,
+    split_x: u32,
+    split_y: u32,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct ComputedWidgetPlacement {
     pub x: i32,
@@ -79,6 +86,16 @@ impl WidgetPlacement {
         }
     }
 
+    //TODO REMOVE
+    pub fn split_into_group(&self, amt_x: u32, amt_y: u32) -> WidgetGroupPlacement {
+        WidgetGroupPlacement {
+            placement: self.clone(),
+            split_x: amt_x,
+            split_y: amt_y,
+        }
+    }
+
+    /// Splits into several placements. out will be a list of columns
     pub fn split(&self, amt_x: u32, amt_y: u32, out: &mut [Self]) {
         let width_per_split = self.width / amt_x as f32;
         let height_per_split = self.height / amt_y as f32;
@@ -100,6 +117,10 @@ impl WidgetPlacement {
         let y = y.into();
 
         self.shift_top_left(-x, -y).shift_bottom_right(x, y)
+    }
+
+    pub fn get_top_left(&self) -> (Coordinate, Coordinate) {
+        self.tl
     }
 
     pub fn get_bottom_right(&self) -> (Coordinate, Coordinate) {
@@ -184,6 +205,107 @@ impl Layout {
             widget: widget.as_dyn(),
         };
         self.layout.insert(widget_hdl, placement);
+    }
+
+    pub fn connect_and_add_widgets<'a, P: Iterator<Item = &'a WidgetPlacement> + Clone>(
+        &mut self,
+        widgets: &mut Vec<Widget<impl Displayable + 'static>>, //TODO: intoIterator
+        placements: &P,
+    ) {
+        let mut locks = widgets
+            .iter_mut()
+            .map(|w| w.data.lock().unwrap())
+            .collect::<Vec<_>>();
+        locks.iter_mut().for_each(|x| x.connected = 0);
+        // for each corner, stores the widgets that are connected to it and which direction they are connected in
+        let mut connection_points: HashMap<(Coordinate, Coordinate), Vec<(usize, u8)>> =
+            HashMap::new();
+
+        const RIGHT: u8 = 1 << 0;
+        const BOTTOM: u8 = 1 << 1;
+        const LEFT: u8 = 1 << 2;
+        const TOP: u8 = 1 << 3;
+
+        for (idx, placement) in placements.clone().enumerate() {
+            let tl = placement.get_top_left();
+            let br = placement.get_bottom_right();
+            let tr = (br.0, tl.1);
+            let bl = (tl.0, br.1);
+
+            match connection_points.get_mut(&tl) {
+                Some(connected) => connected.push((idx, TOP | LEFT)),
+                None => {
+                    connection_points.insert(tl, vec![(idx, TOP | LEFT)]);
+                }
+            }
+            match connection_points.get_mut(&tr) {
+                Some(connected) => connected.push((idx, TOP | RIGHT)),
+                None => {
+                    connection_points.insert(tr, vec![(idx, TOP | RIGHT)]);
+                }
+            }
+            match connection_points.get_mut(&bl) {
+                Some(connected) => connected.push((idx, BOTTOM | LEFT)),
+                None => {
+                    connection_points.insert(bl, vec![(idx, BOTTOM | LEFT)]);
+                }
+            }
+            match connection_points.get_mut(&br) {
+                Some(connected) => connected.push((idx, BOTTOM | RIGHT)),
+                None => {
+                    connection_points.insert(br, vec![(idx, BOTTOM | RIGHT)]);
+                }
+            }
+        }
+
+        // println!("CONNECTION POINTS:");
+        // for (point, connected) in connection_points.iter() {
+        //     println!(
+        //         "{:?}: {:?}: idxs: {:?}",
+        //         point,
+        //         connected.len(),
+        //         connected.iter().map(|(idx, _)| idx).collect::<Vec<_>>()
+        //     );
+        // }
+
+        for connected in connection_points.values_mut() {
+            if connected.len() <= 1 {
+                continue;
+            }
+
+            let connection_type = connected
+                .iter()
+                .fold(u8::MAX, |acc, (_, flags)| acc & flags);
+            let mut is_vertical = ((connection_type & (LEFT | RIGHT)) > 0) as u8;
+            let mut is_lateral = ((connection_type & (TOP | BOTTOM)) > 0) as u8;
+            if is_lateral == 0 && is_vertical == 0 {
+                is_vertical = 1;
+                is_lateral = 1;
+            }
+            let connection_type = is_lateral * crate::widget::connections::CONNECTED_LATERAL
+                | is_vertical * crate::widget::connections::CONNECTED_VERTICAL;
+            for (idx, local_connection) in connected.iter() {
+                let offset = (*local_connection & (RIGHT | BOTTOM)) * 2;
+                locks[*idx].connected |= connection_type << offset;
+                    // println!(
+                    //     "idx: {}, connected: {:#010b} with type {:#04b} | local connection {:#06b} ",
+                    //     *idx,
+                    //     1 << offset,
+                    //     connection_type,
+                    //     local_connection
+                    // );
+            }
+        }
+
+        // println!("FINAL");
+        // for (idx, lock) in locks.iter().enumerate() {
+        //     println!("idx: {}, connected: {:#010b}", idx, lock.connected);
+        // }
+
+        drop(locks);
+        for (widget, placement) in widgets.iter().zip(placements.clone()) {
+            self.add_widget(widget, *placement);
+        }
     }
 
     pub(crate) fn render(&self, size_x: i32, size_y: i32) -> RenderedLayout {

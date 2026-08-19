@@ -1,4 +1,8 @@
-use std::{fmt::Debug, ops::{Add, AddAssign, Neg, Sub, SubAssign}};
+use std::{
+    fmt::Debug,
+    hash::Hash,
+    ops::{Add, AddAssign, Neg, Sub, SubAssign},
+};
 
 #[derive(Copy, Clone)]
 pub enum Coordinate {
@@ -62,6 +66,21 @@ impl Coordinate {
             Relative(r) => Relative(*r),
             Hybrid(_, r) => Relative(*r),
             _ => Absolute(0),
+        }
+    }
+}
+
+impl Hash for Coordinate {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use crate::Coordinate::*;
+        // Brute force conversion to i32 to avoid floating point hash issues
+        match self {
+            Absolute(a) => a.hash(state),
+            Relative(r) => (unsafe { *(r as *const f32 as *const i32) }).hash(state),
+            Hybrid(a, r) => {
+                a.hash(state);
+                (unsafe { *(r as *const f32 as *const i32) }).hash(state);
+            }
         }
     }
 }
@@ -205,7 +224,12 @@ impl Debug for Coordinate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Coordinate::Absolute(a) => write!(f, "{}", a),
-            Coordinate::Relative(r) => write!(f, "{}.{}", r.floor() as i32, (r.fract().abs() * 10.0).round() as i32), // with at least one digit in the decimal part
+            Coordinate::Relative(r) => write!(
+                f,
+                "{}.{}",
+                r.floor() as i32,
+                (r.fract().abs() * 10.0).round() as i32
+            ), // with at least one digit in the decimal part
             Coordinate::Hybrid(a, r) => write!(f, "[{:.1}|{}]", r, a),
         }
     }

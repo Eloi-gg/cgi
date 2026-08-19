@@ -114,6 +114,7 @@ impl crate::layout::RenderedLayout {
                 let inside_placement = if let Some(ref outline) = (*data).outline {
                     outline.render(
                         (placement.width as u16, placement.height as u16),
+                        data.connected,
                         &mut local_changes,
                         (*data).title.as_ref(),
                     );
@@ -343,39 +344,6 @@ mod rendering_tests {
     }
 
     #[test]
-    fn borders() {
-        use crate::symbols::OutlineStyle;
-        let mut output = TestOutput::<{ 4 * 4 }, 4>::new();
-
-        let mut widgets = FillGenerator::new().get_n_widgets(4);
-        let borders = [
-            OutlineStyle::Normal,
-            OutlineStyle::Rounded,
-            OutlineStyle::Double,
-            OutlineStyle::Thick,
-        ];
-        let mut placements = [WidgetPlacement::new(0, 0, 3, 3); 4];
-        for i in 0..4 {
-            for j in 0..i {
-                placements[j] = placements[j].shift(4, 0);
-            }
-            widgets[i].set_outline(borders[i]);
-        }
-
-        let mut layout = Layout::new();
-        for (widget, placement) in widgets.iter().zip(placements.iter()) {
-            layout.add_widget(widget, *placement);
-        }
-
-        let layout = layout.render(16, 4);
-        output.clear();
-        layout.render_to_output(&mut output);
-        let rendered_text = output.to_string();
-
-        assert_match_with_test_file(&rendered_text, "10_border_types");
-    }
-
-    #[test]
     fn title() {
         let text_box = crate::factory_widgets::text::TextBox::new(
             &self::test::strings::lorem_ipsum_long(),
@@ -458,4 +426,6 @@ mod rendering_tests {
         let rendered_text = output.to_string();
         crate::test::assert_match_with_test_file(&rendered_text, "9_titles_full");
     }
+
+    
 }

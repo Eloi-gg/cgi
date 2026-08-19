@@ -135,6 +135,8 @@ pub mod bar {
 }
 
 pub mod line {
+    use crate::widget;
+
     pub const VERTICAL: char = '│';
     pub const DOUBLE_VERTICAL: char = '║';
     pub const THICK_VERTICAL: char = '┃';
@@ -249,7 +251,9 @@ pub mod line {
     };
 
     impl Set {
-        pub(crate) fn render(&self, size: (u16, u16), output: &mut Vec<(u16, u16, char)>, title: Option<&String>) {
+        pub(crate) fn render(&self, size: (u16, u16), connections: u8, output: &mut Vec<(u16, u16, char)>, title: Option<&String>) {
+            use widget::connections::*;
+
             for x in 1..(size.0 - 1) {
                 output.push((x, 0, self.horizontal));
                 output.push((x, size.1 - 1, self.horizontal));
@@ -260,7 +264,15 @@ pub mod line {
                 output.push((size.0 - 1, y, self.vertical));
             }
 
-            output.push((0, 0, self.top_left));
+            let tl_connections = connections & (0b11 << (TL_CORNER - 1)) >> (TL_CORNER / 2);
+            let tl_char = match tl_connections & (CONNECTED_LATERAL | CONNECTED_VERTICAL) {
+                0b11 => self.cross, // LATERAL | VERTICAL
+                CONNECTED_LATERAL => self.horizontal_down,
+                CONNECTED_VERTICAL => self.vertical_right,
+                0 => self.top_left,
+                _ => panic!("how does this happen")
+            };
+            output.push((0, 0, tl_char));
             output.push((size.0 - 1, 0, self.top_right));
             output.push((0, size.1 - 1, self.bottom_left));
             output.push((size.0 - 1, size.1 - 1, self.bottom_right));
@@ -287,6 +299,7 @@ mod outlines {
     use crate::rendering::Output;
     use crate::test::FillWidget;
     use crate::{widget::WidgetBuilder, *};
+    use crate::test::*;
 
     #[test]
     fn normal_variable_size() {
@@ -323,35 +336,66 @@ mod outlines {
     }
 
     #[test]
-    fn offset_long_text() {
-        use crate::*;
-        let mut output = crate::rendering::TestOutput::<48, 16>::new();
-        let text_box = crate::factory_widgets::text::TextBox::new(
-            &self::test::strings::lorem_ipsum_long(),
-            Listener::empty(),
-                factory_widgets::text::TextAlign::Left,
-        );
-        // let simpler_widget = WidgetBuilder::new(FillWidget::new('#'))
-        //     .with_outline(OutlineStyle::Thick)
-        //     .build();
-        let widget = WidgetBuilder::new(text_box)
-            .with_outline(OutlineStyle::Thick)
-            .build();
+    fn borders() {
+        use crate::symbols::OutlineStyle;
+        let mut output = TestOutput::<{ 4 * 4 }, 4>::new();
 
-        output.flush();
-        // let placement = WidgetPlacement::new(x, 0, 16, 8);
-        let placement = WidgetPlacement::fullscreen()
-            .expand_or_shrink(-0.25, -0.25)
-            .shift_bottom_right(-0.2, -0.2);
-        let layout = Layout::new().with_widget(&widget, placement);
+        let mut widgets = FillGenerator::new().get_n_widgets(4);
+        let borders = [
+            OutlineStyle::Normal,
+            OutlineStyle::Rounded,
+            OutlineStyle::Double,
+            OutlineStyle::Thick,
+        ];
+        let mut placements = [WidgetPlacement::new(0, 0, 3, 3); 4];
+        for i in 0..4 {
+            for j in 0..i {
+                placements[j] = placements[j].shift(4, 0);
+            }
+            widgets[i].set_outline(borders[i]);
+        }
 
-        let layout = layout.render(48, 16);
+        let mut layout = Layout::new();
+        for (widget, placement) in widgets.iter().zip(placements.iter()) {
+            layout.add_widget(widget, *placement);
+        }
+
+        let layout = layout.render(16, 4);
+        output.clear();
         layout.render_to_output(&mut output);
-        dbg!(placement);
-        dbg!(layout.0.iter().next().unwrap());
         let rendered_text = output.to_string();
-        println!("{}", rendered_text.trim_end());
 
-        // crate::test::assert_match_with_test_file(&rendered_text, "7_borders.txt");
+        assert_match_with_test_file(&rendered_text, "10_border_types");
+    }
+    
+    #[test]
+    fn split_borders() {
+        let mut output = TestOutput::<25, 45>::new(); // TODO NOT GOOD DIMENSIONS
+        let mut layout = Layout::new();
+        let mut dg = DummyGenerator::new();
+        let mut widgets = dg.get_n_widgets(6);
+
+        let mut placements = [WidgetPlacement::default(); 6];
+        
+        let fs = WidgetPlacement::new(0, 0, 20, 30);
+        fs.split(2, 3, &mut placements);
+        placements[5] = placements[5].shift(0, 10);
+        // Places widgets like this: (x is 100x100)
+        // x x
+        // x x
+        // x
+        //   x
+        dbg!(&placements);
+
+        for i in 0..6 {
+            widgets[i].set_outline(OutlineStyle::Normal);
+            // layout.add_widget(&widgets[i], placements[i as usize]);
+        }
+        layout.connect_and_add_widgets(&mut widgets, &placements.iter());
+        layout.render(25, 45).render_to_output(&mut output);
+        let rendered_text = output.to_string();
+        println!("{}", rendered_text);
+        todo!();
+        // assert_match_with_test_file(&rendered_text, "split_borders");
     }
 }

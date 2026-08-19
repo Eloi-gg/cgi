@@ -724,6 +724,33 @@ mod factory_widgets_tests {
     #[test]
 
     fn wrapping_letter_text() {
+        let mut lorem = self::test::strings::lorem_ipsum_short()
+            .to_string()
+            .repeat(2);
+        lorem += "0123456789abcd\nABC\nDEF";
+        let mut text_box = crate::factory_widgets::text::TextBox::new(
+            &lorem,
+            Listener::empty(),
+            factory_widgets::text::TextAlign::Left,
+        );
+        text_box.set_wrapping_mode(Wrapping::Off);
+        let widget = WidgetBuilder::new(text_box)
+            .with_outline(symbols::OutlineStyle::Thick)
+            .build();
+
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
+        crate::test::assert_match_with_test_file(
+            &rendered_text,
+            "factory_widgets/short_text_no_wrap.txt",
+        );
+
+        widget
+            .displayable
+            .write()
+            .unwrap()
+            .set_align(factory_widgets::text::TextAlign::Right);
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
+        // println!()
         todo!("Test with wrapping in all three alignment modes")
     }
 

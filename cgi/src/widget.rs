@@ -1,11 +1,25 @@
-use std::{hash::Hash, sync::{Arc, Mutex, RwLock}};
 use crate::Displayable;
+use std::{
+    hash::Hash,
+    sync::{Arc, Mutex, RwLock},
+};
+
+pub(crate) mod connections {
+    pub(crate) const TL_CORNER: u8 = 1 << 0;
+    pub(crate) const TR_CORNER: u8 = 1 << 2;
+    pub(crate) const BL_CORNER: u8 = 1 << 4;
+    pub(crate) const BR_CORNER: u8 = 1 << 6;
+    
+    pub(crate) const CONNECTED_LATERAL: u8 = 1 << 0;
+    pub(crate) const CONNECTED_VERTICAL: u8 = 1 << 1;
+}
 
 #[derive(Debug)]
 pub(crate) struct WidgetData {
     pub dirty: bool,
     pub outline: Option<crate::symbols::line::Set>,
     pub title: Option<String>,
+    pub connected: u8,
 }
 
 #[derive(Debug)]
@@ -36,8 +50,7 @@ impl PartialEq for WidgetHdl {
     }
 }
 
-impl Eq for WidgetHdl {
-}
+impl Eq for WidgetHdl {}
 
 impl<T: Displayable + ?Sized + 'static> Hash for Widget<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -48,7 +61,12 @@ impl<T: Displayable + ?Sized + 'static> Hash for Widget<T> {
 impl<T: Displayable + 'static> Widget<T> {
     pub fn new(displayable: T) -> Self {
         Widget {
-            data: Arc::new(Mutex::new(WidgetData { dirty: true, outline: None, title: None })),
+            data: Arc::new(Mutex::new(WidgetData {
+                dirty: true,
+                outline: None,
+                title: None,
+                connected: 0,
+            })),
             displayable: Arc::new(RwLock::new(displayable)),
         }
     }
@@ -70,7 +88,6 @@ impl<T: Displayable + 'static> Widget<T> {
         self.data.lock().unwrap().outline = Some(outline.set().clone());
     }
 
-
     pub fn as_dyn(&self) -> Widget<dyn Displayable> {
         Widget {
             data: self.data.clone(),
@@ -81,11 +98,7 @@ impl<T: Displayable + 'static> Widget<T> {
 
 impl std::fmt::Debug for Widget<dyn Displayable> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Widget at {:p}",
-            Arc::as_ptr(&self.displayable)
-        )
+        write!(f, "Widget at {:p}", Arc::as_ptr(&self.displayable))
     }
 }
 
@@ -125,6 +138,7 @@ impl<T: Displayable + 'static> WidgetBuilder<T> {
                 dirty: self.dirty,
                 outline: self.outline,
                 title: self.title,
+                connected: 0,
             })),
             displayable: Arc::new(RwLock::new(self.displayable)),
         }

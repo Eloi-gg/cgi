@@ -1,0 +1,5 @@
+- color
+- dynamic layout
+- text input
+- text box cells
+- formatting
