@@ -47,7 +47,7 @@ fn main() {
     title_placement
         .shift(0.0, 0.3)
         .with_height(Hybrid(-3, 0.7))
-        .split(2, 1, &mut panels_below_placement);
+        .split(2, 1, false, &mut panels_below_placement);
     let progress_bar_placement =
         WidgetPlacement::new(Absolute(0), Hybrid(-3, 1.0), 1.0.into(), 1.0.into());
 

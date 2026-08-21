@@ -263,8 +263,8 @@ pub mod line {
                 output.push((0, y, self.vertical));
                 output.push((size.0 - 1, y, self.vertical));
             }
-
-            let tl_connections = connections & (0b11 << (TL_CORNER - 1)) >> (TL_CORNER / 2);
+            
+            let tl_connections = (connections & (0b11 << TL_CORNER_OFFSET)) >> TL_CORNER_OFFSET;
             let tl_char = match tl_connections & (CONNECTED_LATERAL | CONNECTED_VERTICAL) {
                 0b11 => self.cross, // LATERAL | VERTICAL
                 CONNECTED_LATERAL => self.horizontal_down,
@@ -272,10 +272,38 @@ pub mod line {
                 0 => self.top_left,
                 _ => panic!("how does this happen")
             };
+
+            let tr_connections = (connections & (0b11 << TR_CORNER_OFFSET)) >> TR_CORNER_OFFSET;
+            let tr_char = match tr_connections & (CONNECTED_LATERAL | CONNECTED_VERTICAL) {
+                0b11 => self.cross, // LATERAL | VERTICAL
+                CONNECTED_LATERAL => self.horizontal_down,
+                CONNECTED_VERTICAL => self.vertical_left,
+                0 => self.top_right,
+                _ => panic!("how does this happen")
+            };
+
+            let bl_connections = (connections & (0b11 << BL_CORNER_OFFSET)) >> BL_CORNER_OFFSET;
+            let bl_char = match bl_connections & (CONNECTED_LATERAL | CONNECTED_VERTICAL) {
+                0b11 => self.cross, // LATERAL | VERTICAL
+                CONNECTED_LATERAL => self.horizontal_up,
+                CONNECTED_VERTICAL => self.vertical_right,
+                0 => self.bottom_left,
+                _ => panic!("how does this happen")
+            };
+
+            let br_connections = (connections & (0b11 << BR_CORNER_OFFSET)) >> BR_CORNER_OFFSET;
+            let br_char = match br_connections & (CONNECTED_LATERAL | CONNECTED_VERTICAL) {
+                0b11 => self.cross, // LATERAL | VERTICAL
+                CONNECTED_LATERAL => self.horizontal_up,
+                CONNECTED_VERTICAL => self.vertical_left,
+                0 => self.bottom_right,
+                _ => panic!("how does this happen")
+            };
+
             output.push((0, 0, tl_char));
-            output.push((size.0 - 1, 0, self.top_right));
-            output.push((0, size.1 - 1, self.bottom_left));
-            output.push((size.0 - 1, size.1 - 1, self.bottom_right));
+            output.push((size.0 - 1, 0, tr_char));
+            output.push((0, size.1 - 1, bl_char));
+            output.push((size.0 - 1, size.1 - 1, br_char));
 
             // Render title if provided
             if let Some(title_text) = title {
@@ -370,32 +398,42 @@ mod outlines {
     
     #[test]
     fn split_borders() {
-        let mut output = TestOutput::<25, 45>::new(); // TODO NOT GOOD DIMENSIONS
+        let mut output = TestOutput::<17, 7>::new(); // TODO NOT GOOD DIMENSIONS
         let mut layout = Layout::new();
-        let mut dg = DummyGenerator::new();
+        let mut dg = FillGenerator::new();
         let mut widgets = dg.get_n_widgets(6);
 
         let mut placements = [WidgetPlacement::default(); 6];
         
-        let fs = WidgetPlacement::new(0, 0, 20, 30);
-        fs.split(2, 3, &mut placements);
-        placements[5] = placements[5].shift(0, 10);
-        // Places widgets like this: (x is 100x100)
-        // x x
-        // x x
-        // x
-        //   x
-        dbg!(&placements);
+        let fs = WidgetPlacement::fullscreen();
+        fs.split(2, 3, true, &mut placements);
 
         for i in 0..6 {
             widgets[i].set_outline(OutlineStyle::Normal);
             // layout.add_widget(&widgets[i], placements[i as usize]);
         }
-        layout.connect_and_add_widgets(&mut widgets, &placements.iter());
-        layout.render(25, 45).render_to_output(&mut output);
+        layout.connect_and_add_widgets(&mut widgets, placements.as_mut_slice());
+        layout.render(17, 7).render_to_output(&mut output);
+        let rendered_text = output.to_string();
+        
+        assert_match_with_test_file(&rendered_text, "11_split_borders");
+    }
+
+    #[test]
+    fn test_split_todo_delete() {
+        let mut output = TestOutput::<6, 6>::new(); 
+        let mut layout = Layout::new();
+
+        let mut widgets = FillGenerator::new().get_n_widgets(2);
+        widgets[0].set_outline(OutlineStyle::Normal);
+        widgets[1].set_outline(OutlineStyle::Normal);
+        let p1 = WidgetPlacement::new(0, 0, 2, 2);
+        let p2 = WidgetPlacement::new(2, 2, 2, 2);
+        let mut mvec = vec![p1, p2];
+        layout.connect_and_add_widgets(&mut widgets, mvec.as_mut_slice());
+        
+        layout.render(6, 6).render_to_output(&mut output);
         let rendered_text = output.to_string();
         println!("{}", rendered_text);
-        todo!();
-        // assert_match_with_test_file(&rendered_text, "split_borders");
     }
 }

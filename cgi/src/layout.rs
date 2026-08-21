@@ -96,7 +96,7 @@ impl WidgetPlacement {
     }
 
     /// Splits into several placements. out will be a list of columns
-    pub fn split(&self, amt_x: u32, amt_y: u32, out: &mut [Self]) {
+    pub fn split(&self, amt_x: u32, amt_y: u32, expand_edges: bool, out: &mut [Self]) {
         let width_per_split = self.width / amt_x as f32;
         let height_per_split = self.height / amt_y as f32;
 
@@ -109,6 +109,14 @@ impl WidgetPlacement {
                 out[(i * amt_y + j) as usize] = unit.shift(x, y);
             }
         }
+
+        for i in 0..amt_x {
+            out[(i * amt_y + (amt_y- 1)) as usize] = out[(i * amt_y + (amt_y-1)) as usize].shift_bottom_right(0, 1);
+        }
+        for i in 0..amt_y {
+            out[((amt_x - 1) * amt_y + i) as usize] = out[((amt_x - 1) * amt_y + i) as usize].shift_bottom_right(1, 0);
+        }
+        
     }
 
     /// Positive values expand the widget, negative values shrink it.
@@ -207,10 +215,10 @@ impl Layout {
         self.layout.insert(widget_hdl, placement);
     }
 
-    pub fn connect_and_add_widgets<'a, P: Iterator<Item = &'a WidgetPlacement> + Clone>(
+    pub fn connect_and_add_widgets(
         &mut self,
         widgets: &mut Vec<Widget<impl Displayable + 'static>>, //TODO: intoIterator
-        placements: &P,
+        placements: &mut [WidgetPlacement],
     ) {
         let mut locks = widgets
             .iter_mut()
@@ -226,7 +234,7 @@ impl Layout {
         const LEFT: u8 = 1 << 2;
         const TOP: u8 = 1 << 3;
 
-        for (idx, placement) in placements.clone().enumerate() {
+        for (idx, placement) in placements.into_iter().enumerate() {
             let tl = placement.get_top_left();
             let br = placement.get_bottom_right();
             let tr = (br.0, tl.1);
@@ -258,15 +266,7 @@ impl Layout {
             }
         }
 
-        // println!("CONNECTION POINTS:");
-        // for (point, connected) in connection_points.iter() {
-        //     println!(
-        //         "{:?}: {:?}: idxs: {:?}",
-        //         point,
-        //         connected.len(),
-        //         connected.iter().map(|(idx, _)| idx).collect::<Vec<_>>()
-        //     );
-        // }
+        let mut expand = vec![(false, false); locks.len()];
 
         for connected in connection_points.values_mut() {
             if connected.len() <= 1 {
@@ -287,23 +287,26 @@ impl Layout {
             for (idx, local_connection) in connected.iter() {
                 let offset = (*local_connection & (RIGHT | BOTTOM)) * 2;
                 locks[*idx].connected |= connection_type << offset;
-                    // println!(
-                    //     "idx: {}, connected: {:#010b} with type {:#04b} | local connection {:#06b} ",
-                    //     *idx,
-                    //     1 << offset,
-                    //     connection_type,
-                    //     local_connection
-                    // );
+
+                // expand the widget by 1
+                let expand_bottom = local_connection & BOTTOM * is_vertical > 0;
+                let expand_right = local_connection & RIGHT * is_lateral > 0;
+
+                expand[*idx].0 |= expand_bottom;
+                expand[*idx].1 |= expand_right;
             }
         }
-
-        // println!("FINAL");
-        // for (idx, lock) in locks.iter().enumerate() {
-        //     println!("idx: {}, connected: {:#010b}", idx, lock.connected);
-        // }
-
         drop(locks);
-        for (widget, placement) in widgets.iter().zip(placements.clone()) {
+
+        for (i, p) in placements.into_iter().enumerate() {
+            let (b, r) = expand[i];
+            let b = b as i32;
+            let r = r as i32;
+
+            *p = p.shift_bottom_right(r, b);
+        }
+
+        for (widget, placement) in widgets.iter().zip(placements.into_iter()) {
             self.add_widget(widget, *placement);
         }
     }
@@ -436,7 +439,7 @@ pub(crate) mod tests {
 
             let mut placements = [WidgetPlacement::default(); 6];
             let fs = WidgetPlacement::fullscreen().expand_or_shrink(-5, -5);
-            fs.split(3, 2, &mut placements);
+            fs.split(3, 2, false, &mut placements);
 
             for i in 0..6 {
                 layout.add_widget(&widgets[i], placements[i as usize]);

@@ -89,7 +89,7 @@ fn main() {
 
     let mut layout = cgi::Layout::new();
     let mut placements = [cgi::layout::WidgetPlacement::default(); 2];
-    cgi::layout::WidgetPlacement::fullscreen().split(2, 1, &mut placements);
+    cgi::layout::WidgetPlacement::fullscreen().split(2, 1, false, &mut placements);
 
     layout.add_widget(&my_widget1, placements[0]);
     layout.add_widget(&my_widget2, placements[1]);

@@ -5,11 +5,16 @@ use std::{
 };
 
 pub(crate) mod connections {
-    pub(crate) const TL_CORNER: u8 = 1 << 0;
-    pub(crate) const TR_CORNER: u8 = 1 << 2;
-    pub(crate) const BL_CORNER: u8 = 1 << 4;
-    pub(crate) const BR_CORNER: u8 = 1 << 6;
+    pub(crate) const TL_CORNER_OFFSET: u8 = 0;
+    pub(crate) const TR_CORNER_OFFSET: u8 = 2;
+    pub(crate) const BL_CORNER_OFFSET: u8 = 4;
+    pub(crate) const BR_CORNER_OFFSET: u8 = 6;
     
+    pub(crate) const TL_CORNER: u8 = 1 << TL_CORNER_OFFSET;
+    pub(crate) const TR_CORNER: u8 = 1 << TR_CORNER_OFFSET;
+    pub(crate) const BL_CORNER: u8 = 1 << BL_CORNER_OFFSET;
+    pub(crate) const BR_CORNER: u8 = 1 << BR_CORNER_OFFSET;
+
     pub(crate) const CONNECTED_LATERAL: u8 = 1 << 0;
     pub(crate) const CONNECTED_VERTICAL: u8 = 1 << 1;
 }

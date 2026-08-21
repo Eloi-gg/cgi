@@ -167,6 +167,9 @@ pub mod text {
         }
 
         pub fn set_text(&mut self, text: &str) {
+            if text.len() > self.text.len() {
+                self.text.resize(text.len(), ' ');
+            }
             for (i, c) in text.chars().enumerate() {
                 if self.text[i] != c {
                     self.text[i] = c;
@@ -241,13 +244,21 @@ pub mod text {
 
             match self.wrapping {
                 Wrapping::Off => {
+                    if self.line_breaks.is_empty() {
+                        let max_width = self.size.0 + 1;
+                        self.layout = vec![max_width];
+                        return;
+                    }
                     let mut layout = vec![*self.line_breaks.first().unwrap() as u16];
-                    layout.append(&mut self
-                        .line_breaks
-                        .windows(2)
-                        .map(|pair| (pair[1] - pair[0] - 1) as u16)
-                        .collect());
-                    layout.push((self.current_length - *self.line_breaks.last().unwrap() - 1) as u16);
+                    layout.append(
+                        &mut self
+                            .line_breaks
+                            .windows(2)
+                            .map(|pair| (pair[1] - pair[0] - 1) as u16)
+                            .collect(),
+                    );
+                    layout
+                        .push((self.current_length - *self.line_breaks.last().unwrap() - 1) as u16);
                     self.layout = layout;
                 }
                 Wrapping::PerWord => {}
@@ -358,6 +369,12 @@ pub mod text {
 
         pub fn set_align(&mut self, align: TextAlign) {
             self.align = align;
+        }
+    }
+
+    impl Default for TextBox {
+        fn default() -> Self {
+            Self::new("", Listener::empty(), TextAlign::Left)
         }
     }
 
@@ -757,5 +774,44 @@ mod factory_widgets_tests {
     #[test]
     fn wrapping_word_text() {
         todo!("Test with wrapping in all three alignment modes")
+    }
+
+    #[test]
+    fn cells_divided() {
+        let mut output = TestOutput::<17, 7>::new(); // TODO NOT GOOD DIMENSIONS
+        let mut layout = Layout::new();
+        let mut dg = FillGenerator::new();
+
+        let mut text_boxes = Vec::from_iter((0..6).map(|_| TextBox::default()));
+        text_boxes[0].set_text("ABC");
+        text_boxes[1].set_text("GHI");
+        text_boxes[1].set_align(TextAlign::Right);
+        text_boxes[2].set_text("nw_abcdefgh");
+        text_boxes[2].set_wrapping_mode(Wrapping::Off);
+        text_boxes[3].set_text("DEF");
+        text_boxes[3].set_align(TextAlign::Center);
+        text_boxes[4].set_text("w_abcdefgh");
+        text_boxes[4].set_align(TextAlign::Center);
+
+        let mut widgets = text_boxes
+            .into_iter()
+            .map(|tb| Widget::new(tb))
+            .collect::<Vec<_>>();
+
+        let mut placements = [WidgetPlacement::default(); 6];
+
+        let fs = WidgetPlacement::fullscreen();
+        fs.split(2, 3, true, &mut placements);
+
+        for i in 0..6 {
+            widgets[i].set_outline(symbols::OutlineStyle::Normal);
+        }
+
+        layout.connect_and_add_widgets(&mut widgets, placements.as_mut_slice());
+        layout.render(17, 7).render_to_output(&mut output);
+        let rendered_text = output.to_string();
+
+        println!("{}", rendered_text);
+        assert_match_with_test_file(&rendered_text, "factory_widgets/cells_divided_tb");
     }
 }

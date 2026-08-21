@@ -408,7 +408,7 @@ mod rendering_tests {
             WidgetPlacement::new(Absolute(1), Absolute(5), Absolute(130), Absolute(6));
 
         let mut panels_below_placement = [WidgetPlacement::fullscreen(); 2];
-        panels_placement.split(2, 1, &mut panels_below_placement);
+        panels_placement.split(2, 1, false, &mut panels_below_placement);
 
         // Progress bar section: bottom (lines 13-15, height 3)
         let progress_bar_placement =
