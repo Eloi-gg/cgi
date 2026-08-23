@@ -27,7 +27,7 @@ impl Displayable for CustomWidget {
 fn scenario_1() {
     use cgi::factory_widgets::{Listener, text::*};
 
-    let mut app = cgi::Application::new();
+    let (mut app, _) = cgi::Application::new();
     let text1 = " Hello, World! \n
 Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
 Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
@@ -60,7 +60,7 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
 fn scenario_2() {
     use cgi::factory_widgets::{Listener, text::*};
 
-    let mut app = cgi::Application::new();
+    let (mut app, _) = cgi::Application::new();
 
     let title = WidgetBuilder::new(TextBox::new("Title", Listener::empty(), factory_widgets::text::TextAlign::Left))
         .build();
@@ -76,7 +76,7 @@ fn main() {
     scenario_2();
     return;
 
-    let mut app = cgi::Application::new();
+    let (mut app, _) = cgi::Application::new();
 
     let my_widget1 = CustomWidget {
         data: "Hello".to_string(),

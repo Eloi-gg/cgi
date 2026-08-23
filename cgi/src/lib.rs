@@ -4,6 +4,7 @@ pub mod debug;
 pub mod factory_widgets;
 pub mod layout;
 pub mod widget;
+pub mod log;
 
 mod rendering;
 pub mod symbols;
@@ -73,9 +74,34 @@ impl Into<String> for CursorMove {
 
 #[derive(Debug)]
 pub enum Action {
-    UpdateWidget,
-    UpdateAll,
+    RedrawWidget,
+    RedrawAll,
     MoveCursor(CursorMove),
+    SendMessage(u64),
+    ShutDown,
+}
+
+impl Action {
+    pub fn send_messages_from_raw_bytes(bytes: &[u8]) -> ActionList {
+        let mut r = ActionList(vec![]);
+        
+        let it =  bytes.iter().rev(); 
+        let mut num: u64 = 0;
+        let mut i = 0; 
+        for byte in it {
+            num |= (*byte as u64) << (i * 8);
+            i += 1;
+            if i > 8 { 
+                r.0.push(Action::SendMessage(num));
+                num = 0;
+                i = 0;
+            }
+        }
+        if i > 0 {
+            r.0.push(Action::SendMessage(num));
+        }
+        r
+    }
 }
 
 impl std::ops::BitOr<Action> for ActionList {
@@ -83,6 +109,15 @@ impl std::ops::BitOr<Action> for ActionList {
 
     fn bitor(mut self, rhs: Action) -> Self::Output {
         self.0.push(rhs);
+        self
+    }
+}
+
+impl std::ops::BitOr<ActionList> for ActionList {
+    type Output = Self;
+
+    fn bitor(mut self, mut rhs: ActionList) -> Self::Output {
+        self.0.append(&mut rhs.0);
         self
     }
 }
@@ -127,9 +162,4 @@ pub trait Displayable {
     /// * `size` - The size of the widget.
     /// * `out` - The output vector to store the changed characters.
     fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
 }

@@ -53,7 +53,7 @@ fn on_event(event: cgi::Event, text_box: &mut cgi::factory_widgets::text::TextBo
 fn build_app() -> cgi::Application {
     use cgi::factory_widgets::{Listener, progression::*, text::*};
 
-    let mut app = cgi::Application::new();
+    let (mut app, _) = cgi::Application::new();
 
     let title = WidgetBuilder::new(TextBox::new(
         "Text editor",
@@ -102,6 +102,6 @@ fn build_app() -> cgi::Application {
 
 fn main() {
     console_println("Init");
-    let mut app = build_app();
+    let app = build_app();
     app.run();
 }

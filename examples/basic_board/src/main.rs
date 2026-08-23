@@ -5,7 +5,7 @@ use cgi::*;
 fn main() {
     use cgi::factory_widgets::{Listener, progression::*, text::*};
 
-    let mut app = cgi::Application::new();
+    let (mut app, _) = cgi::Application::new();
 
     let title = WidgetBuilder::new(TextBox::new(
         "Title",

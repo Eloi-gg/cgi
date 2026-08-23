@@ -31,7 +31,7 @@ The following example demonstrates a simple application with a title, two panels
 The code for this example is quite simple and straightforward.
 
 ```rust
-let mut app = cgi::Application::new();
+let (mut app, _) = cgi::Application::new();
 
     let title = WidgetBuilder::new(TextBox::new(
         "Title",

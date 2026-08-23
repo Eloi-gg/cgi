@@ -167,6 +167,8 @@ pub mod text {
         }
 
         pub fn set_text(&mut self, text: &str) {
+                crate::log::log(&format!("new text {}", text));
+
             if text.len() > self.text.len() {
                 self.text.resize(text.len(), ' ');
             }
@@ -432,6 +434,8 @@ pub mod text {
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
+            crate::log::log(&format!("on event {:?}", event));
+            
             if let crate::Event::Resize(w, h) = event {
                 self.size = (w, h);
                 self.recompute_layout();
@@ -439,7 +443,7 @@ pub mod text {
             }
             if self.listener.is_listening_for(event.into()) {
                 (self.listener.on_event)(event, self);
-                actions.add(crate::Action::UpdateWidget);
+                actions.add(crate::Action::RedrawWidget);
             }
         }
     }
