@@ -13,12 +13,12 @@ static CONSOLE: Lazy<Mutex<DebugConsole>> = Lazy::new(|| {
     let dbg_window_path = std::env::current_dir()
         .unwrap()
         .join("target/debug/dbg_window");
-    dbg_window::create::spawn_server(dbg_window_path.to_str().unwrap(), "127.0.0.1", 4000);
+    dbg_window::create::spawn_server(dbg_window_path.to_str().unwrap(), "127.0.0.2", 4000);
 
     let console = Mutex::new(
         dbg_window::connect::connect_to_server(
             "MainApp",
-            "127.0.0.1",
+            "127.0.0.2",
             4000,
             Some(std::time::Duration::from_secs(5)),
         )
@@ -33,9 +33,18 @@ fn console_println(string: &str) {
     console.send_message(string);
 }
 
-fn on_event(event: cgi::Event, text_box: &mut cgi::factory_widgets::text::TextBox) {
+fn on_event(
+    event: cgi::Event,
+    actions: &mut cgi::ActionList,
+    text_box: &mut cgi::factory_widgets::text::TextBox,
+) {
     if let Event::KeyPress(kc) = event {
-        console_println(&format!("Key pressed event {:?} | text: {} | len {}", kc, text_box.text(), text_box.text_len()));
+        console_println(&format!(
+            "Key pressed event {:?} | text: {} | len {}",
+            kc,
+            text_box.text(),
+            text_box.text_len()
+        ));
         match kc {
             KeyCode::Char(c) => {
                 text_box.append_char(c);
@@ -45,6 +54,11 @@ fn on_event(event: cgi::Event, text_box: &mut cgi::factory_widgets::text::TextBo
             }
             _ => {}
         }
+        actions.add(crate::Action::RedrawWidget);
+        actions.add(crate::Action::MoveCursor(CursorMove::ToRelativeToWidget(
+            text_box.text_len() as u16,
+            0,
+        )));
     } else {
         console_println(&format!("Event {:?}", event));
     }
@@ -96,6 +110,7 @@ fn build_app() -> cgi::Application {
 
     app.set_layout_behaviour(|(..)| "MainLayout".to_string());
     app.add_layout("MainLayout", layout);
+    let _ = app.spawn_debug_window();
 
     app
 }

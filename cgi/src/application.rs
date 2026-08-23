@@ -2,10 +2,11 @@
 
 use crate::Action;
 use crate::{ActionList, rendering::Output};
+use crossterm as ct;
+use crossterm::terminal::ClearType::FromCursorUp;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::mpsc;
-use crossterm as ct;
 
 use crate::{
     Displayable, Widget,
@@ -21,6 +22,7 @@ pub struct Application {
     pub size: (u16, u16),
     pub rendered_layout: RenderedLayout,
     pub output: crate::rendering::LinuxOutput, // TODO : adaptative output (compiles differently depending on OS)
+    pub os: crate::rendering::OS,
     pub connection_rx: mpsc::Receiver<Action>,
     pub connection_tx: mpsc::Sender<u64>,
 }
@@ -54,6 +56,7 @@ impl Application {
                 size: (0, 0),
                 rendered_layout: RenderedLayout(HashMap::new()),
                 output: crate::rendering::LinuxOutput,
+                os: crate::rendering::OS::get(), // TODO: known at compilation
                 connection_tx: msg_channel_tx,
                 connection_rx: action_channel_rx,
             },
@@ -104,7 +107,26 @@ impl Application {
                 .render_widget_to_output(widget, &mut self.output);
         }
     }
-    
+
+    /// Moves the cursor. Does NOT support [`CursorMove::ToRelativeToWidget`] (should be converted before this is called)
+    fn move_cursor(&self, cursor_move: crate::CursorMove) {
+        use ct::cursor as ctc;
+
+        use crate::CursorMove as CM;
+        let mut output = std::io::stdout();
+
+        let _ = match cursor_move {
+            CM::Up(x) => ct::execute!(output, ctc::MoveUp(x)),
+            CM::Down(x) => ct::execute!(output, ctc::MoveDown(x)),
+            CM::Left(x) => ct::execute!(output, ctc::MoveLeft(x)),
+            CM::Right(x) => ct::execute!(output, ctc::MoveRight(x)),
+            CM::ToAbsolute(x, y) => ct::execute!(output, ctc::MoveTo(x, y)),
+            CM::ToRelativeToWidget(..) => {
+                panic!("ToRelativeToWidget should be converted before this is called")
+            }
+        };
+    }
+
     pub fn spawn_debug_window(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         use crate::debug::dbg_window;
         use crate::log::*;
@@ -122,7 +144,6 @@ impl Application {
     }
 
     pub fn run(mut self) {
-
         ct::terminal::enable_raw_mode().expect("Failed to enable raw mode");
         let _ = ct::execute!(std::io::stdout(), ct::terminal::EnterAlternateScreen);
 
@@ -142,6 +163,7 @@ impl Application {
         }
 
         let mut should_redraw_all = false;
+        let mut last_cursor_move = None;
 
         for _ in 0..500 {
             while let Some(action) = self.connection_rx.try_recv().ok() {
@@ -150,10 +172,10 @@ impl Application {
                 match action {
                     Action::RedrawAll => {
                         should_redraw_all = true;
-                    },
+                    }
                     Action::ShutDown => {
                         return;
-                    },
+                    }
                     _ => (),
                 }
             }
@@ -193,15 +215,28 @@ impl Application {
                                 self.rendered_layout
                                     .render_widget_to_output(widget, &mut self.output);
                             }
-                            Action::MoveCursor(move_cmd) => {
-                                todo!()
+                            Action::MoveCursor(cursor_move) => {
+                                let mv_cmd = if let crate::CursorMove::ToRelativeToWidget(x, y) =
+                                    cursor_move
+                                {
+                                    let widget_placement =
+                                        self.rendered_layout.get_widget_coords(widget, true);
+                                    let (x, y) = (
+                                        x + widget_placement.x as u16,
+                                        y + widget_placement.y as u16,
+                                    );
+                                    crate::CursorMove::ToAbsolute(x, y)
+                                } else {
+                                    cursor_move
+                                };
+                                last_cursor_move = Some(mv_cmd);
                             }
                             Action::RedrawAll => {
                                 should_redraw_all = true;
-                            },
+                            }
                             Action::ShutDown => {
                                 return;
-                            },
+                            }
                             _ => {
                                 println!("Unsupported Action: {:?}", action);
                             }
@@ -211,6 +246,11 @@ impl Application {
                 if should_redraw_all {
                     self.redraw_all();
                     should_redraw_all = false;
+                }
+                if let Some(cursor_move) = last_cursor_move {
+                    self.move_cursor(cursor_move);
+                    last_cursor_move = None;
+                    crate::log::log(&format!("CURSOR MOVE {:?}", cursor_move));
                 }
             }
             // self.update();

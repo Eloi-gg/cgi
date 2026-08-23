@@ -3,14 +3,14 @@ use std::collections::HashMap;
 
 use crate::{layout::ComputedWidgetPlacement, widget::WidgetHdl};
 
-enum OS {
+pub(super) enum OS {
     Windows,
     Linux,
     MacOS,
 }
 
 impl OS {
-    fn get() -> Self {
+    pub fn get() -> Self {
         let os = std::env::consts::OS;
         match os {
             "windows" => OS::Windows,
@@ -173,6 +173,7 @@ impl<const W: usize, const H: usize> Output for TestOutput<W, H> {
             panic!("Attempted to place char out of bounds: ({}, {})", x, y);
         }
     }
+
 }
 
 impl<const W: usize, const H: usize> TestOutput<W, H> {

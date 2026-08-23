@@ -27,7 +27,7 @@ pub enum Event {
     Custom(),       // TODO
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum EventType {
     Resize,
     KeyPress,
@@ -51,25 +51,15 @@ impl ActionList {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum CursorMove {
     Up(u16),
     Down(u16),
     Left(u16),
     Right(u16),
-    To(u16, u16),
-}
-
-impl Into<String> for CursorMove {
-    fn into(self) -> String {
-        match self {
-            CursorMove::Up(x) => format!("\x1b[{}A", x),
-            CursorMove::Down(x) => format!("\x1b[{}B", x),
-            CursorMove::Left(x) => format!("\x1b[{}D", x),
-            CursorMove::Right(x) => format!("\x1b[{}C", x),
-            CursorMove::To(x, y) => format!("\x1b[{};{}H", y, x),
-        }
-    }
+    
+    ToAbsolute(u16, u16),
+    ToRelativeToWidget(u16, u16),
 }
 
 #[derive(Debug)]
@@ -101,24 +91,6 @@ impl Action {
             r.0.push(Action::SendMessage(num));
         }
         r
-    }
-}
-
-impl std::ops::BitOr<Action> for ActionList {
-    type Output = Self;
-
-    fn bitor(mut self, rhs: Action) -> Self::Output {
-        self.0.push(rhs);
-        self
-    }
-}
-
-impl std::ops::BitOr<ActionList> for ActionList {
-    type Output = Self;
-
-    fn bitor(mut self, mut rhs: ActionList) -> Self::Output {
-        self.0.append(&mut rhs.0);
-        self
     }
 }
 
