@@ -1,15 +1,20 @@
 // TODO: this file is a mess of workarounds.
 
-use crate::{rendering::Output, ActionList};
+use crate::Action;
+use crate::{ActionList, rendering::Output};
+use crossterm as ct;
+use crossterm::terminal::ClearType::FromCursorUp;
 use std::collections::HashMap;
 use std::io::Write;
+use std::sync::mpsc;
 
 use crate::{
+    Displayable, Widget,
     layout::{ComputedWidgetPlacement, Layout, RenderedLayout},
     widget::WidgetHdl,
-    Displayable, Widget,
 };
 
+//TODO: remove pub
 pub struct Application {
     pub layouts: HashMap<String, Layout>,
     pub current_layout: String,
@@ -17,18 +22,49 @@ pub struct Application {
     pub size: (u16, u16),
     pub rendered_layout: RenderedLayout,
     pub output: crate::rendering::LinuxOutput, // TODO : adaptative output (compiles differently depending on OS)
+    pub os: crate::rendering::OS,
+    pub connection_rx: mpsc::Receiver<Action>,
+    pub connection_tx: mpsc::Sender<u64>,
+}
+
+/// Represents a connection to the application. Can send actions and receive messages
+pub struct AppConnection {
+    sender: mpsc::Sender<Action>,
+    receiver: mpsc::Receiver<u64>,
+}
+
+impl AppConnection {
+    pub fn send(&self, action: Action) {
+        self.sender.send(action).ok();
+    }
+
+    pub fn receive(&self) -> Option<u64> {
+        self.receiver.try_recv().ok()
+    }
 }
 
 impl Application {
-    pub fn new() -> Self {
-        Application {
-            layouts: HashMap::new(),
-            current_layout: String::new(),
-            behavior: |(_w, _h)| "No behavior set!".to_string(),
-            size: (0, 0),
-            rendered_layout: RenderedLayout(HashMap::new()),
-            output: crate::rendering::LinuxOutput,
-        }
+    pub fn new() -> (Self, AppConnection) {
+        let (msg_channel_tx, msg_channel_rx) = mpsc::channel();
+        let (action_channel_tx, action_channel_rx) = mpsc::channel();
+
+        return (
+            Application {
+                layouts: HashMap::new(),
+                current_layout: String::new(),
+                behavior: |(_w, _h)| "No behavior set!".to_string(),
+                size: (0, 0),
+                rendered_layout: RenderedLayout(HashMap::new()),
+                output: crate::rendering::LinuxOutput,
+                os: crate::rendering::OS::get(), // TODO: known at compilation
+                connection_tx: msg_channel_tx,
+                connection_rx: action_channel_rx,
+            },
+            AppConnection {
+                sender: action_channel_tx,
+                receiver: msg_channel_rx,
+            },
+        );
     }
 
     pub fn add_layout(&mut self, name: &str, layout: Layout) {
@@ -65,16 +101,53 @@ impl Application {
         self.update();
     }
 
-    pub fn run(mut self) {
-        use crossterm::{
-            event::{poll, read, Event, KeyCode},
-            terminal::{enable_raw_mode, size},
+    fn redraw_all(&mut self) {
+        for widget in self.rendered_layout.0.keys() {
+            self.rendered_layout
+                .render_widget_to_output(widget, &mut self.output);
+        }
+    }
+
+    /// Moves the cursor. Does NOT support [`CursorMove::ToRelativeToWidget`] (should be converted before this is called)
+    fn move_cursor(&self, cursor_move: crate::CursorMove) {
+        use ct::cursor as ctc;
+
+        use crate::CursorMove as CM;
+        let mut output = std::io::stdout();
+
+        let _ = match cursor_move {
+            CM::Up(x) => ct::execute!(output, ctc::MoveUp(x)),
+            CM::Down(x) => ct::execute!(output, ctc::MoveDown(x)),
+            CM::Left(x) => ct::execute!(output, ctc::MoveLeft(x)),
+            CM::Right(x) => ct::execute!(output, ctc::MoveRight(x)),
+            CM::ToAbsolute(x, y) => ct::execute!(output, ctc::MoveTo(x, y)),
+            CM::ToRelativeToWidget(..) => {
+                panic!("ToRelativeToWidget should be converted before this is called")
+            }
         };
+    }
 
-        enable_raw_mode().expect("Failed to enable raw mode");
+    pub fn spawn_debug_window(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::debug::dbg_window;
+        use crate::log::*;
 
-        let (cols, rows) = size().unwrap();
-        println!("Terminal size: {} cols, {} rows", cols, rows);
+        dbg_window::create::spawn_server(
+            get_dbg_window_exe_path().to_str().unwrap(),
+            CONNECTION_IP,
+            CONNECTION_PORT,
+        );
+
+        init_logger()?;
+
+        crate::log::log("CONNECTED");
+        Ok(())
+    }
+
+    pub fn run(mut self) {
+        ct::terminal::enable_raw_mode().expect("Failed to enable raw mode");
+        let _ = ct::execute!(std::io::stdout(), ct::terminal::EnterAlternateScreen);
+
+        let (cols, rows) = ct::terminal::size().unwrap();
 
         self.output.flush();
         self.size_changed(cols, rows);
@@ -85,19 +158,41 @@ impl Application {
                 .write()
                 .unwrap()
                 .on_event(crate::Event::Resize(cols, rows), &mut ActionList::new());
-            self.rendered_layout.render_widget_to_output(widget, &mut self.output);
+            self.rendered_layout
+                .render_widget_to_output(widget, &mut self.output);
         }
 
+        let mut should_redraw_all = false;
+        let mut last_cursor_move = None;
+
         for _ in 0..500 {
-            if poll(std::time::Duration::from_millis(100)).unwrap() {
-                let event = read().unwrap();
+            while let Some(action) = self.connection_rx.try_recv().ok() {
+                crate::log::log(&format!("CGI core: received action {:?}", action));
+
+                match action {
+                    Action::RedrawAll => {
+                        should_redraw_all = true;
+                    }
+                    Action::ShutDown => {
+                        return;
+                    }
+                    _ => (),
+                }
+            }
+            if should_redraw_all {
+                self.redraw_all();
+                should_redraw_all = false;
+            }
+
+            if ct::event::poll(std::time::Duration::from_millis(100)).unwrap() {
+                let event = ct::event::read().unwrap();
                 match event {
-                    Event::Key(key_event) => {
-                        if key_event.code == KeyCode::Esc {
-                            break;
+                    ct::event::Event::Key(key_event) => {
+                        if key_event.code == ct::event::KeyCode::Esc {
+                            return;
                         }
                     }
-                    Event::Resize(new_cols, new_rows) => {
+                    ct::event::Event::Resize(new_cols, new_rows) => {
                         self.size_changed(new_cols, new_rows);
                         // println!("Resized to: {} cols, {} rows", new_cols, new_rows);
                     }
@@ -116,12 +211,31 @@ impl Application {
 
                     for action in actions_list.drain() {
                         match action {
-                            crate::Action::UpdateWidget => {
+                            Action::RedrawWidget => {
                                 self.rendered_layout
                                     .render_widget_to_output(widget, &mut self.output);
-                            },
-                            crate::Action::MoveCursor(move_cmd) => {
-                                todo!()
+                            }
+                            Action::MoveCursor(cursor_move) => {
+                                let mv_cmd = if let crate::CursorMove::ToRelativeToWidget(x, y) =
+                                    cursor_move
+                                {
+                                    let widget_placement =
+                                        self.rendered_layout.get_widget_coords(widget, true);
+                                    let (x, y) = (
+                                        x + widget_placement.x as u16,
+                                        y + widget_placement.y as u16,
+                                    );
+                                    crate::CursorMove::ToAbsolute(x, y)
+                                } else {
+                                    cursor_move
+                                };
+                                last_cursor_move = Some(mv_cmd);
+                            }
+                            Action::RedrawAll => {
+                                should_redraw_all = true;
+                            }
+                            Action::ShutDown => {
+                                return;
                             }
                             _ => {
                                 println!("Unsupported Action: {:?}", action);
@@ -129,10 +243,25 @@ impl Application {
                         }
                     }
                 }
+                if should_redraw_all {
+                    self.redraw_all();
+                    should_redraw_all = false;
+                }
+                if let Some(cursor_move) = last_cursor_move {
+                    self.move_cursor(cursor_move);
+                    last_cursor_move = None;
+                    crate::log::log(&format!("CURSOR MOVE {:?}", cursor_move));
+                }
             }
             // self.update();
             // print!(".");
-            std::io::stdout().flush().unwrap();
         }
+    }
+}
+
+impl Drop for Application {
+    fn drop(&mut self) {
+        let _ = ct::terminal::disable_raw_mode();
+        let _ = ct::execute!(std::io::stdout(), ct::terminal::LeaveAlternateScreen);
     }
 }

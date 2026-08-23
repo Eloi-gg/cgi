@@ -9,6 +9,23 @@ pub struct Layout {
 
 pub(crate) struct RenderedLayout(pub(crate) HashMap<WidgetHdl, ComputedWidgetPlacement>);
 
+impl RenderedLayout {
+    pub fn get_widget_coords(&self, widget: &WidgetHdl, only_insides: bool) -> ComputedWidgetPlacement {
+        let placement = self.0[widget];
+
+        return if only_insides {
+            let outlined = widget.widget.data.lock().unwrap().outline.is_some();
+            if outlined {
+                placement.shrinked()
+            } else {
+                placement
+            }
+        } else {
+            placement
+        };
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct WidgetPlacement {
     tl: (Coordinate, Coordinate),
@@ -29,6 +46,17 @@ pub(crate) struct ComputedWidgetPlacement {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+}
+
+impl ComputedWidgetPlacement {
+    pub fn shrinked(self) -> Self {
+        Self {
+            x: self.x + 1,
+            y: self.y + 1,
+            width: self.width - 2,
+            height: self.height - 2,
+        }
+    }
 }
 
 impl Default for WidgetPlacement {
@@ -111,12 +139,13 @@ impl WidgetPlacement {
         }
 
         for i in 0..amt_x {
-            out[(i * amt_y + (amt_y- 1)) as usize] = out[(i * amt_y + (amt_y-1)) as usize].shift_bottom_right(0, 1);
+            out[(i * amt_y + (amt_y - 1)) as usize] =
+                out[(i * amt_y + (amt_y - 1)) as usize].shift_bottom_right(0, 1);
         }
         for i in 0..amt_y {
-            out[((amt_x - 1) * amt_y + i) as usize] = out[((amt_x - 1) * amt_y + i) as usize].shift_bottom_right(1, 0);
+            out[((amt_x - 1) * amt_y + i) as usize] =
+                out[((amt_x - 1) * amt_y + i) as usize].shift_bottom_right(1, 0);
         }
-        
     }
 
     /// Positive values expand the widget, negative values shrink it.

@@ -4,6 +4,7 @@ pub mod debug;
 pub mod factory_widgets;
 pub mod layout;
 pub mod widget;
+pub mod log;
 
 mod rendering;
 pub mod symbols;
@@ -26,7 +27,7 @@ pub enum Event {
     Custom(),       // TODO
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum EventType {
     Resize,
     KeyPress,
@@ -50,40 +51,46 @@ impl ActionList {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum CursorMove {
     Up(u16),
     Down(u16),
     Left(u16),
     Right(u16),
-    To(u16, u16),
-}
-
-impl Into<String> for CursorMove {
-    fn into(self) -> String {
-        match self {
-            CursorMove::Up(x) => format!("\x1b[{}A", x),
-            CursorMove::Down(x) => format!("\x1b[{}B", x),
-            CursorMove::Left(x) => format!("\x1b[{}D", x),
-            CursorMove::Right(x) => format!("\x1b[{}C", x),
-            CursorMove::To(x, y) => format!("\x1b[{};{}H", y, x),
-        }
-    }
+    
+    ToAbsolute(u16, u16),
+    ToRelativeToWidget(u16, u16),
 }
 
 #[derive(Debug)]
 pub enum Action {
-    UpdateWidget,
-    UpdateAll,
+    RedrawWidget,
+    RedrawAll,
     MoveCursor(CursorMove),
+    SendMessage(u64),
+    ShutDown,
 }
 
-impl std::ops::BitOr<Action> for ActionList {
-    type Output = Self;
-
-    fn bitor(mut self, rhs: Action) -> Self::Output {
-        self.0.push(rhs);
-        self
+impl Action {
+    pub fn send_messages_from_raw_bytes(bytes: &[u8]) -> ActionList {
+        let mut r = ActionList(vec![]);
+        
+        let it =  bytes.iter().rev(); 
+        let mut num: u64 = 0;
+        let mut i = 0; 
+        for byte in it {
+            num |= (*byte as u64) << (i * 8);
+            i += 1;
+            if i > 8 { 
+                r.0.push(Action::SendMessage(num));
+                num = 0;
+                i = 0;
+            }
+        }
+        if i > 0 {
+            r.0.push(Action::SendMessage(num));
+        }
+        r
     }
 }
 
@@ -127,9 +134,4 @@ pub trait Displayable {
     /// * `size` - The size of the widget.
     /// * `out` - The output vector to store the changed characters.
     fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
 }

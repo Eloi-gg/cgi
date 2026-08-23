@@ -3,24 +3,24 @@ use std::collections::BTreeSet;
 use crate::{Displayable, EventType};
 
 pub struct Listener<T: ?Sized> {
-    events: Vec<EventType>,
-    on_event: fn(crate::Event, &mut T),
+    events: std::collections::HashSet<EventType>,
+    on_event: fn(crate::Event, &mut crate::ActionList, &mut T),
 }
 
 impl<T: ?Sized> Listener<T> {
     pub fn empty() -> Self {
-        Self::new(|_, _| {})
+        Self::new(|_, _, _| {})
     }
 
-    pub fn new(on_event: fn(crate::Event, &mut T)) -> Self {
+    pub fn new(on_event: fn(crate::Event, &mut crate::ActionList, &mut T)) -> Self {
         Self {
-            events: Vec::new(),
+            events: std::collections::HashSet::new(),
             on_event,
         }
     }
 
     pub fn listen_for(&mut self, event: crate::EventType) {
-        self.events.push(event.into());
+        self.events.insert(event.into());
     }
 
     pub fn listening_for(self, event: crate::EventType) -> Self {
@@ -110,7 +110,7 @@ pub mod progression {
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
             if self.listener.is_listening_for(event.into()) {
-                (self.listener.on_event)(event, self);
+                (self.listener.on_event)(event, actions, self);
             }
         }
     }
@@ -616,14 +616,16 @@ pub mod text {
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
+            crate::log::log(&format!("on event {:?}", event));
+            
             if let crate::Event::Resize(w, h) = event {
                 self.size = (w, h);
                 self.recompute_layout();
                 self.changed_chars = (0..self.text.len()).collect();
             }
             if self.listener.is_listening_for(event.into()) {
-                (self.listener.on_event)(event, self);
-                actions.add(crate::Action::UpdateWidget);
+                (self.listener.on_event)(event, actions, self);
+                actions.add(crate::Action::RedrawWidget);
             }
         }
     }
