@@ -68,11 +68,11 @@ pub mod progression {
 
     impl Displayable for ProgressBar {
         fn display(&self) {
-            todo!()
+            // No-op: rendering is handled via get_changed_chars.
         }
 
         fn name(&self) -> String {
-            todo!()
+            "ProgressBar".to_string()
         }
 
         fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
@@ -80,29 +80,30 @@ pub mod progression {
                 return;
             }
 
-            match self.bar_type {
-                ProgressBarType::HorizontalNineLevels | ProgressBarType::VerticalNineLevels => {
-                    let set = match self.bar_type {
-                        ProgressBarType::HorizontalNineLevels => block::NINE_LEVELS,
-                        ProgressBarType::HorizontalThreeLevels => block::THREE_LEVELS,
-                        _ => unreachable!(),
-                    };
-                    let filled_width = (self.amt * size.0 as f32) as usize;
-                    let partial_fill = (self.amt * size.0 as f32).fract();
+            let (axis_len, set, is_horizontal) = match self.bar_type {
+                ProgressBarType::HorizontalNineLevels => (size.0 as usize, block::NINE_LEVELS, true),
+                ProgressBarType::HorizontalThreeLevels => (size.0 as usize, block::THREE_LEVELS, true),
+                ProgressBarType::VerticalNineLevels => (size.1 as usize, block::NINE_LEVELS, false),
+                ProgressBarType::VerticalThreeLevels => (size.1 as usize, block::THREE_LEVELS, false),
+            };
 
-                    for x in 0..size.0 as usize {
-                        let ch = if x < filled_width {
-                            block::FULL
-                        } else if x == filled_width && partial_fill > 0.0 {
-                            set.get_level(partial_fill)
-                        } else {
-                            ' '
-                        };
-                        out.push((x as u16, 0, ch));
-                    }
-                }
-                _ => {
-                    todo!()
+            let scaled = (self.amt.clamp(0.0, 1.0) * axis_len as f32);
+            let filled = scaled.floor() as usize;
+            let partial_fill = scaled.fract();
+
+            for i in 0..axis_len {
+                let ch = if i < filled {
+                    block::FULL
+                } else if i == filled && partial_fill > 0.0 {
+                    set.get_level(partial_fill)
+                } else {
+                    ' '
+                };
+
+                if is_horizontal {
+                    out.push((i as u16, 0, ch));
+                } else {
+                    out.push((0, i as u16, ch));
                 }
             }
         }
@@ -144,6 +145,14 @@ pub mod text {
         wrapping: Wrapping,
     }
 
+    pub struct TextInput {
+        text_box: TextBox,
+        cursor: usize,
+        max_length: Option<usize>,
+        cursor_visible: bool,
+        listener: Listener<Self>,
+    }
+
     impl TextBox {
         pub fn new(text: &str, listener: Listener<Self>, align: TextAlign) -> Self {
             let text: Vec<char> = text.chars().collect();
@@ -167,22 +176,23 @@ pub mod text {
         }
 
         pub fn set_text(&mut self, text: &str) {
-                crate::log::log(&format!("new text {}", text));
-
-            if text.len() > self.text.len() {
-                self.text.resize(text.len(), ' ');
+            let new_text: Vec<char> = text.chars().collect();
+            if new_text.len() > self.text.len() {
+                self.text.resize(new_text.len(), ' ');
             }
-            for (i, c) in text.chars().enumerate() {
-                if self.text[i] != c {
-                    self.text[i] = c;
+            for (i, c) in new_text.iter().enumerate() {
+                if self.text[i] != *c {
+                    self.text[i] = *c;
                     self.changed_chars.insert(i);
                 }
             }
 
-            for i in text.len()..self.text.len() {
+            self.current_length = new_text.len();
+            for i in new_text.len()..self.text.len() {
                 self.text[i] = ' ';
                 self.changed_chars.insert(i);
             }
+            self.recompute_layout();
         }
 
         pub fn append_text(&mut self, text: &str) {
@@ -246,21 +256,25 @@ pub mod text {
 
             match self.wrapping {
                 Wrapping::Off => {
-                    if self.line_breaks.is_empty() {
-                        let max_width = self.size.0 + 1;
-                        self.layout = vec![max_width];
+                    if self.size.0 == 0 {
+                        self.layout.clear();
                         return;
                     }
-                    let mut layout = vec![*self.line_breaks.first().unwrap() as u16];
-                    layout.append(
-                        &mut self
-                            .line_breaks
-                            .windows(2)
-                            .map(|pair| (pair[1] - pair[0] - 1) as u16)
-                            .collect(),
-                    );
-                    layout
-                        .push((self.current_length - *self.line_breaks.last().unwrap() - 1) as u16);
+
+                    let mut layout = Vec::new();
+                    let mut start = 0usize;
+
+                    for &break_idx in &self.line_breaks {
+                        let line_len = break_idx.saturating_sub(start);
+                        layout.push(line_len as u16);
+                        start = break_idx + 1;
+                    }
+
+                    let remaining = self.current_length.saturating_sub(start);
+                    if !layout.is_empty() || remaining > 0 {
+                        layout.push(remaining as u16);
+                    }
+
                     self.layout = layout;
                 }
                 Wrapping::PerWord => {}
@@ -310,31 +324,34 @@ pub mod text {
 
             match self.wrapping {
                 Wrapping::Off => {
-                    let last = self
+                    let expected_line = self
                         .line_breaks
                         .iter()
-                        .enumerate()
-                        .take_while(|(_, i)| **i < index)
-                        .last();
-
-                    let (expected_line, last_break) = match last {
-                        Some((idx, break_point)) => (1 + idx as usize, *break_point as usize),
-                        None => (0, 0),
+                        .take_while(|&&break_point| break_point < index)
+                        .count();
+                    let last_break = self
+                        .line_breaks
+                        .iter()
+                        .take_while(|&&break_point| break_point < index)
+                        .last()
+                        .copied()
+                        .unwrap_or(0usize);
+                    let line_start = if last_break == 0 {
+                        0usize
+                    } else {
+                        last_break + 1
                     };
-                    let mut index_on_line = index - last_break;
-                    if last_break > 0 {
-                        index_on_line -= 1;
-                    }
-                    // Letting one character overflow so that we know if the text is too wide.
-                    // The character will be clipped anyway
-                    if index_on_line > 1 + self.size.0 as usize {
+                    let index_on_line = index - line_start;
+
+                    if index_on_line > self.size.0 as usize {
                         return None;
                     }
-                    let line_width = self.layout[expected_line].clamp(0, self.size.0);
+
+                    let line_width = self.layout.get(expected_line).copied().unwrap_or(0).min(self.size.0);
                     let offset = match self.align {
                         TextAlign::Left => 0,
-                        TextAlign::Center => self.size.0.saturating_sub(line_width as u16) / 2,
-                        TextAlign::Right => self.size.0.saturating_sub(line_width as u16),
+                        TextAlign::Center => self.size.0.saturating_sub(line_width) / 2,
+                        TextAlign::Right => self.size.0.saturating_sub(line_width),
                     };
 
                     return Some((
@@ -374,7 +391,172 @@ pub mod text {
         }
     }
 
+    impl TextInput {
+        pub fn new(text: &str, listener: Listener<Self>, align: TextAlign) -> Self {
+            let mut inner = TextBox::new(text, Listener::empty(), align);
+            inner.set_wrapping_mode(Wrapping::Off);
+            Self {
+                cursor: inner.text_len(),
+                max_length: None,
+                cursor_visible: true,
+                listener,
+                text_box: inner,
+            }
+        }
+
+        pub fn text(&self) -> String {
+            self.text_box.text()
+        }
+
+        pub fn text_len(&self) -> usize {
+            self.text_box.text_len()
+        }
+
+        pub fn set_text(&mut self, text: &str) {
+            self.text_box.set_text(text);
+            self.cursor = self.cursor.min(self.text_box.text_len());
+        }
+
+        pub fn append_text(&mut self, text: &str) {
+            for ch in text.chars() {
+                self.insert_char(ch);
+            }
+        }
+
+        pub fn append_char(&mut self, ch: char) {
+            self.insert_char(ch);
+        }
+
+        pub fn insert_char(&mut self, ch: char) {
+            if ch.is_control() && ch != '\n' {
+                return;
+            }
+
+            if let Some(max_length) = self.max_length {
+                if self.text_box.text_len() >= max_length {
+                    return;
+                }
+            }
+
+            self.text_box.text.insert(self.cursor, ch);
+            self.text_box.current_length += 1;
+            self.text_box.changed_chars = (0..self.text_box.current_length).collect();
+            self.text_box.recompute_layout();
+            self.cursor += 1;
+        }
+
+        pub fn remove_text(&mut self, start: usize, end: usize) {
+            if start >= end || end > self.text_box.text_len() {
+                return;
+            }
+
+            self.text_box.text.drain(start..end);
+            self.text_box.current_length = self.text_box.text.len();
+            self.text_box.changed_chars = (0..self.text_box.current_length).collect();
+            self.text_box.recompute_layout();
+
+            if self.cursor > end {
+                self.cursor -= end - start;
+            } else if self.cursor > start {
+                self.cursor = start;
+            }
+        }
+
+        pub fn remove_char_before_cursor(&mut self) {
+            if self.cursor == 0 {
+                return;
+            }
+            let previous_cursor = self.cursor;
+            self.remove_text(self.cursor - 1, self.cursor);
+            self.cursor = previous_cursor.saturating_sub(1);
+        }
+
+        pub fn remove_char_after_cursor(&mut self) {
+            if self.cursor >= self.text_box.text_len() {
+                return;
+            }
+            self.remove_text(self.cursor, self.cursor + 1);
+        }
+
+        pub fn move_cursor_left(&mut self, amount: usize) {
+            self.cursor = self.cursor.saturating_sub(amount);
+        }
+
+        pub fn move_cursor_right(&mut self, amount: usize) {
+            self.cursor = (self.cursor + amount).min(self.text_box.text_len());
+        }
+
+        pub fn set_cursor(&mut self, index: usize) {
+            self.cursor = index.min(self.text_box.text_len());
+        }
+
+        pub fn cursor(&self) -> usize {
+            self.cursor
+        }
+
+        pub fn set_max_length(&mut self, max_length: Option<usize>) {
+            self.max_length = max_length;
+            if let Some(max_length) = max_length {
+                if self.text_box.text_len() > max_length {
+                    let new_len = self.text_box.text_len().min(max_length);
+                    self.text_box.text.truncate(new_len);
+                    self.text_box.current_length = new_len;
+                    self.cursor = self.cursor.min(new_len);
+                    self.text_box.changed_chars = (0..new_len).collect();
+                    self.text_box.recompute_layout();
+                }
+            }
+        }
+
+        pub fn set_align(&mut self, align: TextAlign) {
+            self.text_box.set_align(align);
+        }
+
+        pub fn set_wrapping_mode(&mut self, wrapping: Wrapping) {
+            self.text_box.set_wrapping_mode(wrapping);
+        }
+
+        pub fn set_cursor_visible(&mut self, visible: bool) {
+            self.cursor_visible = visible;
+        }
+
+        fn cursor_position(&self, size: (u16, u16)) -> Option<(u16, u16)> {
+            let total_len = self.text_box.text_len();
+            if total_len == 0 {
+                return Some((0, 0));
+            }
+
+            let cursor_index = self.cursor.min(total_len);
+            if cursor_index == total_len {
+                let last_visible = self
+                    .text_box
+                    .text
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, ch)| **ch != '\n')
+                    .last();
+                match last_visible {
+                    Some((idx, _)) => {
+                        let pos = self.text_box.get_char_placement(idx)?;
+                        let (x, y, _) = pos;
+                        Some((x.saturating_add(1).min(size.0.saturating_sub(1)), y.min(size.1.saturating_sub(1))))
+                    }
+                    None => Some((0, 0)),
+                }
+            } else {
+                let (x, y, _) = self.text_box.get_char_placement(cursor_index)?;
+                Some((x.min(size.0.saturating_sub(1)), y.min(size.1.saturating_sub(1))))
+            }
+        }
+    }
+
     impl Default for TextBox {
+        fn default() -> Self {
+            Self::new("", Listener::empty(), TextAlign::Left)
+        }
+    }
+
+    impl Default for TextInput {
         fn default() -> Self {
             Self::new("", Listener::empty(), TextAlign::Left)
         }
@@ -382,11 +564,11 @@ pub mod text {
 
     impl Displayable for TextBox {
         fn display(&self) {
-            todo!()
+            // Rendering is handled by `get_changed_chars` during layout pass.
         }
 
         fn name(&self) -> String {
-            todo!()
+            "TextBox".to_string()
         }
 
         fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
@@ -447,6 +629,104 @@ pub mod text {
             }
         }
     }
+
+    impl Displayable for TextInput {
+        fn display(&self) {
+            // Rendering is handled by `get_changed_chars` during layout pass.
+        }
+
+        fn name(&self) -> String {
+            "TextInput".to_string()
+        }
+
+        fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
+            if size.0 * size.1 == 0 {
+                return;
+            }
+
+            self.text_box.size = size;
+            self.text_box.recompute_layout();
+            let mut chars: BTreeMap<(u16, u16), char> = BTreeMap::new();
+            for i in 0..self.text_box.text_len() {
+                if let Some((x, y, c)) = self.text_box.get_char_placement(i) {
+                    if x < size.0 && y < size.1 {
+                        chars.insert((x, y), c);
+                    }
+                }
+            }
+
+            if self.cursor_visible {
+                if let Some((x, y)) = self.cursor_position(size) {
+                    if x < size.0 && y < size.1 {
+                        chars.insert((x, y), '|');
+                    }
+                }
+            }
+
+            out.extend(
+                chars
+                    .into_iter()
+                    .map(|((x, y), c)| (x, y, c)),
+            );
+        }
+
+        fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
+            let mut should_update = false;
+
+            if let crate::Event::Resize(w, h) = event {
+                self.text_box.size = (w, h);
+                self.text_box.recompute_layout();
+                should_update = true;
+            }
+
+            if let crate::Event::KeyPress(code) = event {
+                match code {
+                    crate::KeyCode::Backspace => {
+                        self.remove_char_before_cursor();
+                        should_update = true;
+                    }
+                    crate::KeyCode::Delete => {
+                        self.remove_char_after_cursor();
+                        should_update = true;
+                    }
+                    crate::KeyCode::Left => {
+                        self.move_cursor_left(1);
+                        should_update = true;
+                    }
+                    crate::KeyCode::Right => {
+                        self.move_cursor_right(1);
+                        should_update = true;
+                    }
+                    crate::KeyCode::Home => {
+                        self.set_cursor(0);
+                        should_update = true;
+                    }
+                    crate::KeyCode::End => {
+                        self.set_cursor(self.text_box.text_len());
+                        should_update = true;
+                    }
+                    crate::KeyCode::Enter => {
+                        self.insert_char('\n');
+                        should_update = true;
+                    }
+                    crate::KeyCode::Char(ch) if !ch.is_control() => {
+                        self.insert_char(ch);
+                        should_update = true;
+                    }
+                    _ => {}
+                }
+            }
+
+            if self.listener.is_listening_for(event.into()) {
+                (self.listener.on_event)(event, self);
+                should_update = true;
+            }
+
+            if should_update {
+                actions.add(crate::Action::UpdateWidget);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -486,7 +766,7 @@ mod factory_widgets_tests {
         changed.drain(..);
         text_box.append_text("56");
         text_box.get_changed_chars((16, 1), &mut changed);
-        assert_eq!(
+        assert_eq!(ù
             changed,
             (4..6)
                 .into_iter()
@@ -778,6 +1058,45 @@ mod factory_widgets_tests {
     #[test]
     fn wrapping_word_text() {
         todo!("Test with wrapping in all three alignment modes")
+    }
+
+    #[test]
+    fn text_input_editing() {
+        let mut input = TextInput::new("abc", Listener::empty(), TextAlign::Left);
+        let mut actions = ActionList::new();
+
+        input.on_event(Event::Resize(16, 1), &mut actions);
+        input.on_event(Event::KeyPress(crate::KeyCode::Left), &mut actions);
+        input.on_event(Event::KeyPress(crate::KeyCode::Char('x')), &mut actions);
+        assert_eq!(input.text(), "abxc");
+
+        input.on_event(Event::KeyPress(crate::KeyCode::Backspace), &mut actions);
+        assert_eq!(input.text(), "abc");
+
+        input.on_event(Event::KeyPress(crate::KeyCode::Left), &mut actions);
+        input.on_event(Event::KeyPress(crate::KeyCode::Delete), &mut actions);
+        assert_eq!(input.text(), "ac");
+    }
+
+    #[test]
+    fn progress_bar_horizontal_and_vertical() {
+        let mut bar = crate::factory_widgets::progression::ProgressBar::new(
+            crate::factory_widgets::progression::ProgressBarType::HorizontalNineLevels,
+            0.625,
+            Listener::empty(),
+        );
+        let mut out = Vec::new();
+        bar.get_changed_chars((4, 1), &mut out);
+        assert_eq!(out, vec![(0, 0, '█'), (1, 0, '█'), (2, 0, '▌'), (3, 0, ' ')], "horizontal bar");
+
+        let mut vertical = crate::factory_widgets::progression::ProgressBar::new(
+            crate::factory_widgets::progression::ProgressBarType::VerticalNineLevels,
+            0.75,
+            Listener::empty(),
+        );
+        let mut out = Vec::new();
+        vertical.get_changed_chars((1, 4), &mut out);
+        assert_eq!(out, vec![(0, 0, '█'), (0, 1, '█'), (0, 2, '█'), (0, 3, ' ')], "vertical bar");
     }
 
     #[test]
