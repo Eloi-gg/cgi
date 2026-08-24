@@ -19,16 +19,7 @@ impl OutlineStyle {
 
 // Basically stolen from tui-rs. MIT license.
 
-pub mod block {
-    pub const FULL: char = '█';
-    pub const SEVEN_EIGHTHS: char = '▉';
-    pub const THREE_QUARTERS: char = '▊';
-    pub const FIVE_EIGHTHS: char = '▋';
-    pub const HALF: char = '▌';
-    pub const THREE_EIGHTHS: char = '▍';
-    pub const ONE_QUARTER: char = '▎';
-    pub const ONE_EIGHTH: char = '▏';
-
+pub mod progress_bar {
     #[derive(Debug, Clone)]
     pub struct Set {
         pub full: char,
@@ -41,97 +32,101 @@ pub mod block {
         pub one_eighth: char,
         pub empty: char,
     }
+    
+    pub mod block {
+        use super::Set;
+        
+        pub const FULL: char = '█';
+        pub const SEVEN_EIGHTHS: char = '▉';
+        pub const THREE_QUARTERS: char = '▊';
+        pub const FIVE_EIGHTHS: char = '▋';
+        pub const HALF: char = '▌';
+        pub const THREE_EIGHTHS: char = '▍';
+        pub const ONE_QUARTER: char = '▎';
+        pub const ONE_EIGHTH: char = '▏';
 
-    pub const THREE_LEVELS: Set = Set {
-        full: FULL,
-        seven_eighths: FULL,
-        three_quarters: HALF,
-        five_eighths: HALF,
-        half: HALF,
-        three_eighths: HALF,
-        one_quarter: HALF,
-        one_eighth: ' ',
-        empty: ' ',
-    };
+    
+        pub const THREE_LEVELS: Set = Set {
+            full: FULL,
+            seven_eighths: FULL,
+            three_quarters: HALF,
+            five_eighths: HALF,
+            half: HALF,
+            three_eighths: HALF,
+            one_quarter: HALF,
+            one_eighth: ' ',
+            empty: ' ',
+        };
 
-    pub const NINE_LEVELS: Set = Set {
-        full: FULL,
-        seven_eighths: SEVEN_EIGHTHS,
-        three_quarters: THREE_QUARTERS,
-        five_eighths: FIVE_EIGHTHS,
-        half: HALF,
-        three_eighths: THREE_EIGHTHS,
-        one_quarter: ONE_QUARTER,
-        one_eighth: ONE_EIGHTH,
-        empty: ' ',
-    };
+        pub const NINE_LEVELS: Set = Set {
+            full: FULL,
+            seven_eighths: SEVEN_EIGHTHS,
+            three_quarters: THREE_QUARTERS,
+            five_eighths: FIVE_EIGHTHS,
+            half: HALF,
+            three_eighths: THREE_EIGHTHS,
+            one_quarter: ONE_QUARTER,
+            one_eighth: ONE_EIGHTH,
+            empty: ' ',
+        };
 
-    impl Set {
-        pub fn get_level(&self, amt: f32) -> char {
-            assert!(amt >= 0.0 && amt <= 1.0, "amt must be between 0.0 and 1.0");
-            let amt = amt.max(0.0).min(1.0);
-            let level = (amt * 8.0).round() as usize;
-            [
-                self.full,
-                self.seven_eighths,
-                self.three_quarters,
-                self.five_eighths,
-                self.half,
-                self.three_eighths,
-                self.one_quarter,
-                self.one_eighth,
-                ' ',
-            ][8-level]
+        impl Set {
+            pub fn get_level(&self, amt: f32) -> char {
+                assert!(amt >= 0.0 && amt <= 1.0, "amt must be between 0.0 and 1.0");
+                let amt = amt.max(0.0).min(1.0);
+                let level = (amt * 8.0).round() as usize;
+                [
+                    self.full,
+                    self.seven_eighths,
+                    self.three_quarters,
+                    self.five_eighths,
+                    self.half,
+                    self.three_eighths,
+                    self.one_quarter,
+                    self.one_eighth,
+                    ' ',
+                ][8 - level]
+            }
         }
     }
-}
 
-pub mod bar {
-    pub const FULL: char = '█';
-    pub const SEVEN_EIGHTHS: char = '▇';
-    pub const THREE_QUARTERS: char = '▆';
-    pub const FIVE_EIGHTHS: char = '▅';
-    pub const HALF: char = '▄';
-    pub const THREE_EIGHTHS: char = '▃';
-    pub const ONE_QUARTER: char = '▂';
-    pub const ONE_EIGHTH: char = '▁';
+    pub mod bar {
+        use super::Set;
+        
+        pub const FULL: char = '█';
+        pub const SEVEN_EIGHTHS: char = '▇';
+        pub const THREE_QUARTERS: char = '▆';
+        pub const FIVE_EIGHTHS: char = '▅';
+        pub const HALF: char = '▄';
+        pub const THREE_EIGHTHS: char = '▃';
+        pub const ONE_QUARTER: char = '▂';
+        pub const ONE_EIGHTH: char = '▁';
 
-    #[derive(Debug, Clone)]
-    pub struct Set {
-        pub full: char,
-        pub seven_eighths: char,
-        pub three_quarters: char,
-        pub five_eighths: char,
-        pub half: char,
-        pub three_eighths: char,
-        pub one_quarter: char,
-        pub one_eighth: char,
-        pub empty: char,
+
+        pub const THREE_LEVELS: Set = Set {
+            full: FULL,
+            seven_eighths: FULL,
+            three_quarters: HALF,
+            five_eighths: HALF,
+            half: HALF,
+            three_eighths: HALF,
+            one_quarter: HALF,
+            one_eighth: ' ',
+            empty: ' ',
+        };
+
+        pub const NINE_LEVELS: Set = Set {
+            full: FULL,
+            seven_eighths: SEVEN_EIGHTHS,
+            three_quarters: THREE_QUARTERS,
+            five_eighths: FIVE_EIGHTHS,
+            half: HALF,
+            three_eighths: THREE_EIGHTHS,
+            one_quarter: ONE_QUARTER,
+            one_eighth: ONE_EIGHTH,
+            empty: ' ',
+        };
     }
-
-    pub const THREE_LEVELS: Set = Set {
-        full: FULL,
-        seven_eighths: FULL,
-        three_quarters: HALF,
-        five_eighths: HALF,
-        half: HALF,
-        three_eighths: HALF,
-        one_quarter: HALF,
-        one_eighth: ' ',
-        empty: ' ',
-    };
-
-    pub const NINE_LEVELS: Set = Set {
-        full: FULL,
-        seven_eighths: SEVEN_EIGHTHS,
-        three_quarters: THREE_QUARTERS,
-        five_eighths: FIVE_EIGHTHS,
-        half: HALF,
-        three_eighths: THREE_EIGHTHS,
-        one_quarter: ONE_QUARTER,
-        one_eighth: ONE_EIGHTH,
-        empty: ' ',
-    };
 }
 
 pub mod line {
@@ -251,7 +246,13 @@ pub mod line {
     };
 
     impl Set {
-        pub(crate) fn render(&self, size: (u16, u16), connections: u8, output: &mut Vec<(u16, u16, char)>, title: Option<&String>) {
+        pub(crate) fn render(
+            &self,
+            size: (u16, u16),
+            connections: u8,
+            output: &mut Vec<(u16, u16, char)>,
+            title: Option<&String>,
+        ) {
             use widget::connections::*;
 
             for x in 1..(size.0 - 1) {
@@ -263,14 +264,14 @@ pub mod line {
                 output.push((0, y, self.vertical));
                 output.push((size.0 - 1, y, self.vertical));
             }
-            
+
             let tl_connections = (connections & (0b11 << TL_CORNER_OFFSET)) >> TL_CORNER_OFFSET;
             let tl_char = match tl_connections & (CONNECTED_LATERAL | CONNECTED_VERTICAL) {
                 0b11 => self.cross, // LATERAL | VERTICAL
                 CONNECTED_LATERAL => self.horizontal_down,
                 CONNECTED_VERTICAL => self.vertical_right,
                 0 => self.top_left,
-                _ => panic!("how does this happen")
+                _ => panic!("how does this happen"),
             };
 
             let tr_connections = (connections & (0b11 << TR_CORNER_OFFSET)) >> TR_CORNER_OFFSET;
@@ -279,7 +280,7 @@ pub mod line {
                 CONNECTED_LATERAL => self.horizontal_down,
                 CONNECTED_VERTICAL => self.vertical_left,
                 0 => self.top_right,
-                _ => panic!("how does this happen")
+                _ => panic!("how does this happen"),
             };
 
             let bl_connections = (connections & (0b11 << BL_CORNER_OFFSET)) >> BL_CORNER_OFFSET;
@@ -288,7 +289,7 @@ pub mod line {
                 CONNECTED_LATERAL => self.horizontal_up,
                 CONNECTED_VERTICAL => self.vertical_right,
                 0 => self.bottom_left,
-                _ => panic!("how does this happen")
+                _ => panic!("how does this happen"),
             };
 
             let br_connections = (connections & (0b11 << BR_CORNER_OFFSET)) >> BR_CORNER_OFFSET;
@@ -297,7 +298,7 @@ pub mod line {
                 CONNECTED_LATERAL => self.horizontal_up,
                 CONNECTED_VERTICAL => self.vertical_left,
                 0 => self.bottom_right,
-                _ => panic!("how does this happen")
+                _ => panic!("how does this happen"),
             };
 
             output.push((0, 0, tl_char));
@@ -310,7 +311,7 @@ pub mod line {
                 let title_bytes = title_text.as_bytes();
                 let available_width = (size.0 - 2) as usize;
                 let title_len = title_bytes.len().min(available_width);
-                
+
                 // Position title at x=1 (right after top_left corner)
                 for (i, &byte) in title_bytes[..title_len].iter().enumerate() {
                     output.push((1 + i as u16, 0, byte as char));
@@ -326,8 +327,8 @@ mod outlines {
     use crate::factory_widgets::Listener;
     use crate::rendering::Output;
     use crate::test::FillWidget;
-    use crate::{widget::WidgetBuilder, *};
     use crate::test::*;
+    use crate::{widget::WidgetBuilder, *};
 
     #[test]
     fn normal_variable_size() {
@@ -357,7 +358,7 @@ mod outlines {
             .write()
             .unwrap()
             .on_event(crate::Event::Resize(14, 6), &mut ActionList::new());
-        
+
         let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
         println!("{}", rendered_text);
         crate::test::assert_match_with_test_file(&rendered_text, "7_borders.txt");
@@ -395,7 +396,7 @@ mod outlines {
 
         assert_match_with_test_file(&rendered_text, "10_border_types");
     }
-    
+
     #[test]
     fn split_borders() {
         let mut output = TestOutput::<17, 7>::new(); // TODO NOT GOOD DIMENSIONS
@@ -404,7 +405,7 @@ mod outlines {
         let mut widgets = dg.get_n_widgets(6);
 
         let mut placements = [WidgetPlacement::default(); 6];
-        
+
         let fs = WidgetPlacement::fullscreen();
         fs.split(2, 3, true, &mut placements);
 
@@ -415,13 +416,13 @@ mod outlines {
         layout.connect_and_add_widgets(&mut widgets, placements.as_mut_slice());
         layout.render(17, 7).render_to_output(&mut output);
         let rendered_text = output.to_string();
-        
+
         assert_match_with_test_file(&rendered_text, "11_split_borders");
     }
 
     #[test]
     fn test_split_todo_delete() {
-        let mut output = TestOutput::<6, 6>::new(); 
+        let mut output = TestOutput::<6, 6>::new();
         let mut layout = Layout::new();
 
         let mut widgets = FillGenerator::new().get_n_widgets(2);
@@ -431,7 +432,7 @@ mod outlines {
         let p2 = WidgetPlacement::new(2, 2, 2, 2);
         let mut mvec = vec![p1, p2];
         layout.connect_and_add_widgets(&mut widgets, mvec.as_mut_slice());
-        
+
         layout.render(6, 6).render_to_output(&mut output);
         let rendered_text = output.to_string();
         println!("{}", rendered_text);

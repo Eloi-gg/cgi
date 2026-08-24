@@ -49,6 +49,9 @@ fn on_event(
             KeyCode::Char(c) => {
                 text_box.append_char(c);
             }
+            KeyCode::Enter => {
+                text_box.append_char('\n');
+            }
             KeyCode::Backspace => {
                 text_box.remove_text(text_box.text_len() - 1, text_box.text_len());
             }
@@ -115,8 +118,55 @@ fn build_app() -> cgi::Application {
     app
 }
 
+fn build_app_w_text_input() -> cgi::Application {
+    use cgi::factory_widgets::{Listener, progression::*, text::*};
+
+    let (mut app, _) = cgi::Application::new();
+
+    let title = WidgetBuilder::new(TextBox::new(
+        "Text editor",
+        Listener::empty(),
+        factory_widgets::text::TextAlign::Center,
+    ))
+    .with_outline(symbols::OutlineStyle::Double)
+    .build();
+
+    let main_panel = WidgetBuilder::new(TextInput::default())
+    .with_outline(symbols::OutlineStyle::Rounded)
+    .build();
+    let progress_bar = WidgetBuilder::new(ProgressBar::new(
+        ProgressBarType::HorizontalNineLevels,
+        0.0,
+        Listener::empty(),
+    ))
+    .with_outline(symbols::OutlineStyle::Normal)
+    .with_title("Progress")
+    .build();
+
+    let title_placement = WidgetPlacement::fullscreen()
+        .with_height(3)
+        .expand_or_shrink(-1, 0);
+    let main_panel_placement = title_placement.get_below().shift_bottom_right(0, -3);
+    let progress_bar_placement =
+        WidgetPlacement::new(Absolute(0), Hybrid(-3, 1.0), 1.0.into(), 1.0.into());
+
+    let layout = cgi::Layout::new()
+        .with_widget(&title, title_placement)
+        .with_widget(&main_panel, main_panel_placement)
+        .with_widget(
+            &progress_bar,
+            progress_bar_placement.expand_or_shrink(-1, 0),
+        );
+
+    app.set_layout_behaviour(|(..)| "MainLayout".to_string());
+    app.add_layout("MainLayout", layout);
+    let _ = app.spawn_debug_window();
+
+    app
+}
+
 fn main() {
     console_println("Init");
-    let app = build_app();
+    let app = build_app_w_text_input();
     app.run();
 }

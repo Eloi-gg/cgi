@@ -10,7 +10,11 @@ pub struct Layout {
 pub(crate) struct RenderedLayout(pub(crate) HashMap<WidgetHdl, ComputedWidgetPlacement>);
 
 impl RenderedLayout {
-    pub fn get_widget_coords(&self, widget: &WidgetHdl, only_insides: bool) -> ComputedWidgetPlacement {
+    pub fn get_widget_coords(
+        &self,
+        widget: &WidgetHdl,
+        only_insides: bool,
+    ) -> ComputedWidgetPlacement {
         let placement = self.0[widget];
 
         return if only_insides {
@@ -138,13 +142,15 @@ impl WidgetPlacement {
             }
         }
 
-        for i in 0..amt_x {
-            out[(i * amt_y + (amt_y - 1)) as usize] =
-                out[(i * amt_y + (amt_y - 1)) as usize].shift_bottom_right(0, 1);
-        }
-        for i in 0..amt_y {
-            out[((amt_x - 1) * amt_y + i) as usize] =
-                out[((amt_x - 1) * amt_y + i) as usize].shift_bottom_right(1, 0);
+        if expand_edges {
+            for i in 0..amt_x {
+                out[(i * amt_y + (amt_y - 1)) as usize] =
+                    out[(i * amt_y + (amt_y - 1)) as usize].shift_bottom_right(0, 1);
+            }
+            for i in 0..amt_y {
+                out[((amt_x - 1) * amt_y + i) as usize] =
+                    out[((amt_x - 1) * amt_y + i) as usize].shift_bottom_right(1, 0);
+            }
         }
     }
 

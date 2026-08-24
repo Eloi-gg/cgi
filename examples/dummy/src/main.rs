@@ -15,7 +15,7 @@ impl Displayable for CustomWidget {
         format!("CustomWidget {}", self.data)
     }
 
-    fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
+    fn get_changed_chars(&mut self, size: (u16, u16)) -> &[(u16, u16, char)] {
         todo!()
     }
 
@@ -73,8 +73,11 @@ fn scenario_2() {
 }
 
 fn main() {
-    scenario_2();
+    for i in 3..0 {
+        print!("{} ", i);
+    }
     return;
+    scenario_2();
 
     let (mut app, _) = cgi::Application::new();
 

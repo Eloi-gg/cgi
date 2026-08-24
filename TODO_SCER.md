@@ -1,5 +1,5 @@
 - color
 - dynamic layout
-- text input
-- text box cells
+- text input OK
+- text box cells OK
 - formatting

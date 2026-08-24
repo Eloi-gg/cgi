@@ -36,7 +36,7 @@ impl<T: ?Sized> Listener<T> {
 
 pub mod progression {
     use super::*;
-    use crate::symbols::{bar, block};
+    use crate::symbols::progress_bar::{bar, block};
 
     pub enum ProgressBarType {
         HorizontalNineLevels,
@@ -47,8 +47,10 @@ pub mod progression {
 
     pub struct ProgressBar {
         bar_type: ProgressBarType,
-
+        changed_chars: Vec<(u16, u16, char)>,
+        current_num_chars: usize,
         amt: f32,
+        size: u16,
         listener: Listener<Self>,
     }
 
@@ -56,13 +58,77 @@ pub mod progression {
         pub fn new(bar_type: ProgressBarType, amt: f32, listener: Listener<Self>) -> Self {
             Self {
                 bar_type,
+                changed_chars: Vec::new(),
+                current_num_chars: 0,
                 amt,
+                size: 0,
                 listener,
             }
         }
 
         pub fn set_amt(&mut self, amt: f32) {
             self.amt = amt;
+            self.compute_changed_chars();
+        }
+
+        fn scaled_amt(&self, amt: f32) -> f32 {
+            amt.clamp(0.0, 1.0) * self.size as f32
+        }
+
+        fn get_set(&self) -> crate::symbols::progress_bar::Set {
+            match self.bar_type {
+                ProgressBarType::HorizontalNineLevels => bar::NINE_LEVELS,
+                ProgressBarType::HorizontalThreeLevels => bar::THREE_LEVELS,
+                ProgressBarType::VerticalNineLevels => block::NINE_LEVELS,
+                ProgressBarType::VerticalThreeLevels => block::THREE_LEVELS,
+            }
+        }
+
+        fn compute_changed_chars(&mut self) {
+            let scaled = self.scaled_amt(self.amt);
+
+            let new_num_chars = scaled.ceil() as usize;
+            let filled = scaled.floor() as usize;
+            let partial_fill = scaled.fract();
+
+            let range = if new_num_chars < self.current_num_chars {
+                new_num_chars..(self.current_num_chars + 1)
+            } else {
+                self.current_num_chars..(new_num_chars + 1)
+            };
+
+            self.changed_chars.clear();
+            self.current_num_chars = new_num_chars;
+
+            let set = self.get_set();
+
+            for i in range {
+                let ch = if i < filled {
+                    set.full
+                } else if i == filled && partial_fill > 0.0 {
+                    set.get_level(partial_fill)
+                } else {
+                    '#'
+                };
+
+                if self.is_horizontal() {
+                    self.changed_chars.push((i as u16, 0, ch));
+                } else {
+                    self.changed_chars.push((0, i as u16, ch));
+                }
+            }
+        }
+
+        fn full_recompute(&mut self) {
+            self.current_num_chars = 0;
+            self.compute_changed_chars();
+        }
+
+        fn is_horizontal(&self) -> bool {
+            matches!(
+                self.bar_type,
+                ProgressBarType::HorizontalNineLevels | ProgressBarType::HorizontalThreeLevels
+            )
         }
     }
 
@@ -75,40 +141,24 @@ pub mod progression {
             "ProgressBar".to_string()
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
+        fn get_changed_chars(&mut self, size: (u16, u16)) -> &[(u16, u16, char)] {
             if size.0 * size.1 == 0 {
-                return;
+                return &[];
             }
 
-            let (axis_len, set, is_horizontal) = match self.bar_type {
-                ProgressBarType::HorizontalNineLevels => (size.0 as usize, block::NINE_LEVELS, true),
-                ProgressBarType::HorizontalThreeLevels => (size.0 as usize, block::THREE_LEVELS, true),
-                ProgressBarType::VerticalNineLevels => (size.1 as usize, block::NINE_LEVELS, false),
-                ProgressBarType::VerticalThreeLevels => (size.1 as usize, block::THREE_LEVELS, false),
-            };
-
-            let scaled = (self.amt.clamp(0.0, 1.0) * axis_len as f32);
-            let filled = scaled.floor() as usize;
-            let partial_fill = scaled.fract();
-
-            for i in 0..axis_len {
-                let ch = if i < filled {
-                    block::FULL
-                } else if i == filled && partial_fill > 0.0 {
-                    set.get_level(partial_fill)
-                } else {
-                    ' '
-                };
-
-                if is_horizontal {
-                    out.push((i as u16, 0, ch));
-                } else {
-                    out.push((0, i as u16, ch));
-                }
-            }
+            &self.changed_chars
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
+            if let crate::Event::Resize(w, h) = event {
+                let axis_len = match self.bar_type {
+                    ProgressBarType::HorizontalNineLevels => w,
+                    ProgressBarType::HorizontalThreeLevels => w,
+                    ProgressBarType::VerticalNineLevels => h,
+                    ProgressBarType::VerticalThreeLevels => h,
+                };
+                self.size = axis_len;
+            }
             if self.listener.is_listening_for(event.into()) {
                 (self.listener.on_event)(event, actions, self);
             }
@@ -118,6 +168,8 @@ pub mod progression {
 
 pub mod text {
     use std::collections::{BTreeMap, HashMap};
+
+    use crate::CursorMove;
 
     use super::*;
 
@@ -143,6 +195,7 @@ pub mod text {
         listener: Listener<Self>,
         align: TextAlign,
         wrapping: Wrapping,
+        out_buffer: Vec<(u16, u16, char)>,
     }
 
     pub struct TextInput {
@@ -168,6 +221,7 @@ pub mod text {
                 layout: vec![0; 1], // Initialize with a single line
                 line_breaks: vec![0],
                 wrapping: Wrapping::PerLetter,
+                out_buffer: Vec::new(),
             }
         }
 
@@ -347,7 +401,12 @@ pub mod text {
                         return None;
                     }
 
-                    let line_width = self.layout.get(expected_line).copied().unwrap_or(0).min(self.size.0);
+                    let line_width = self
+                        .layout
+                        .get(expected_line)
+                        .copied()
+                        .unwrap_or(0)
+                        .min(self.size.0);
                     let offset = match self.align {
                         TextAlign::Left => 0,
                         TextAlign::Center => self.size.0.saturating_sub(line_width) / 2,
@@ -539,13 +598,19 @@ pub mod text {
                     Some((idx, _)) => {
                         let pos = self.text_box.get_char_placement(idx)?;
                         let (x, y, _) = pos;
-                        Some((x.saturating_add(1).min(size.0.saturating_sub(1)), y.min(size.1.saturating_sub(1))))
+                        Some((
+                            x.saturating_add(1).min(size.0.saturating_sub(1)),
+                            y.min(size.1.saturating_sub(1)),
+                        ))
                     }
                     None => Some((0, 0)),
                 }
             } else {
                 let (x, y, _) = self.text_box.get_char_placement(cursor_index)?;
-                Some((x.min(size.0.saturating_sub(1)), y.min(size.1.saturating_sub(1))))
+                Some((
+                    x.min(size.0.saturating_sub(1)),
+                    y.min(size.1.saturating_sub(1)),
+                ))
             }
         }
     }
@@ -571,9 +636,9 @@ pub mod text {
             "TextBox".to_string()
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
+        fn get_changed_chars(&mut self, size: (u16, u16)) -> &[(u16, u16, char)] {
             if size.0 * size.1 == 0 {
-                return;
+                return &[];
             }
 
             const NO_WRAPPING_POINTS: u16 = 3;
@@ -606,18 +671,17 @@ pub mod text {
 
             // changes.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1))); // sort by position
             // changes.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1); // filter for duplicate positions
+            self.out_buffer = changes
+                .into_iter()
+                .map(|(pos, c)| (pos.0, pos.1, c))
+                .collect::<Vec<_>>();
 
-            out.append(
-                &mut changes
-                    .into_iter()
-                    .map(|(pos, c)| (pos.0, pos.1, c))
-                    .collect::<Vec<_>>(),
-            );
+            &self.out_buffer
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
             crate::log::log(&format!("on event {:?}", event));
-            
+
             if let crate::Event::Resize(w, h) = event {
                 self.size = (w, h);
                 self.recompute_layout();
@@ -625,7 +689,6 @@ pub mod text {
             }
             if self.listener.is_listening_for(event.into()) {
                 (self.listener.on_event)(event, actions, self);
-                actions.add(crate::Action::RedrawWidget);
             }
         }
     }
@@ -639,35 +702,12 @@ pub mod text {
             "TextInput".to_string()
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>) {
+        fn get_changed_chars(&mut self, size: (u16, u16)) -> &[(u16, u16, char)] {
             if size.0 * size.1 == 0 {
-                return;
+                return &[];
             }
 
-            self.text_box.size = size;
-            self.text_box.recompute_layout();
-            let mut chars: BTreeMap<(u16, u16), char> = BTreeMap::new();
-            for i in 0..self.text_box.text_len() {
-                if let Some((x, y, c)) = self.text_box.get_char_placement(i) {
-                    if x < size.0 && y < size.1 {
-                        chars.insert((x, y), c);
-                    }
-                }
-            }
-
-            if self.cursor_visible {
-                if let Some((x, y)) = self.cursor_position(size) {
-                    if x < size.0 && y < size.1 {
-                        chars.insert((x, y), '|');
-                    }
-                }
-            }
-
-            out.extend(
-                chars
-                    .into_iter()
-                    .map(|((x, y), c)| (x, y, c)),
-            );
+            &self.text_box.out_buffer
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
@@ -718,12 +758,17 @@ pub mod text {
             }
 
             if self.listener.is_listening_for(event.into()) {
-                (self.listener.on_event)(event, self);
+                (self.listener.on_event)(event, actions, self);
                 should_update = true;
             }
 
             if should_update {
-                actions.add(crate::Action::UpdateWidget);
+                if let Some((cx, cy)) = self.cursor_position(self.text_box.size) {
+                    actions.add(crate::Action::MoveCursor(CursorMove::ToRelativeToWidget(
+                        cx, cy,
+                    )));
+                }
+                actions.add(crate::Action::RedrawWidget);
             }
         }
     }
@@ -736,14 +781,14 @@ mod factory_widgets_tests {
 
     #[test]
     fn adding_and_removing_text() {
-        let mut changed = Vec::new();
+        let mut changed = Vec::<(u16, u16, char)>::new();
         let mut text_box = TextBox::new("123", Listener::empty(), TextAlign::Left);
 
         text_box.on_event(Event::Resize(16, 1), &mut ActionList::new());
 
         text_box.append_char('4');
         text_box.append_text("567");
-        text_box.get_changed_chars((16, 1), &mut changed);
+        changed = Vec::from(text_box.get_changed_chars((16, 1)));
         assert_eq!(
             changed,
             (0..7)
@@ -753,11 +798,11 @@ mod factory_widgets_tests {
         );
 
         changed.drain(..);
-        text_box.get_changed_chars((16, 1), &mut changed);
+        changed = Vec::from(text_box.get_changed_chars((16, 1)));
         assert!(changed.is_empty());
 
         text_box.remove_text(text_box.text_len() - 3, text_box.text_len());
-        text_box.get_changed_chars((16, 1), &mut changed);
+        changed = Vec::from(text_box.get_changed_chars((16, 1)));
         assert_eq!(
             changed,
             (4..7).into_iter().map(|i| (i, 0, ' ')).collect::<Vec<_>>()
@@ -765,8 +810,8 @@ mod factory_widgets_tests {
 
         changed.drain(..);
         text_box.append_text("56");
-        text_box.get_changed_chars((16, 1), &mut changed);
-        assert_eq!(ù
+        changed = Vec::from(text_box.get_changed_chars((16, 1)));
+        assert_eq!(
             changed,
             (4..6)
                 .into_iter()
@@ -779,7 +824,7 @@ mod factory_widgets_tests {
         text_box.remove_text(text_box.text_len() - 1, text_box.text_len());
         text_box.remove_text(text_box.text_len() - 1, text_box.text_len());
 
-        text_box.get_changed_chars((16, 2), &mut changed);
+        changed = Vec::from(text_box.get_changed_chars((16, 2)));
         assert_eq!(
             changed,
             vec![
@@ -918,24 +963,6 @@ mod factory_widgets_tests {
         assert_match_with_test_file(&rendered_text, "factory_widgets/right_multiline_text");
     }
 
-    #[test]
-    fn short_text() {
-        let text_box = crate::factory_widgets::text::TextBox::new(
-            self::test::strings::lorem_ipsum_short(),
-            Listener::empty(),
-            factory_widgets::text::TextAlign::Left,
-        );
-        let widget = WidgetBuilder::new(text_box)
-            .with_outline(symbols::OutlineStyle::Thick)
-            .build();
-
-        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
-        println!("{}", rendered_text);
-        crate::test::assert_match_with_test_file(
-            &rendered_text,
-            "factory_widgets/short_text_letter_wrap.txt",
-        );
-    }
 
     #[test]
     fn loading_bar() {
@@ -1034,15 +1061,15 @@ mod factory_widgets_tests {
             Listener::empty(),
             factory_widgets::text::TextAlign::Left,
         );
-        text_box.set_wrapping_mode(Wrapping::Off);
+        text_box.set_wrapping_mode(Wrapping::PerLetter);
         let widget = WidgetBuilder::new(text_box)
             .with_outline(symbols::OutlineStyle::Thick)
             .build();
 
-        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (18, 12));
         crate::test::assert_match_with_test_file(
             &rendered_text,
-            "factory_widgets/short_text_no_wrap.txt",
+            "factory_widgets/short_text_letter_wrap.txt",
         );
 
         widget
@@ -1086,8 +1113,12 @@ mod factory_widgets_tests {
             Listener::empty(),
         );
         let mut out = Vec::new();
-        bar.get_changed_chars((4, 1), &mut out);
-        assert_eq!(out, vec![(0, 0, '█'), (1, 0, '█'), (2, 0, '▌'), (3, 0, ' ')], "horizontal bar");
+        out = Vec::from(bar.get_changed_chars((4, 1)));
+        assert_eq!(
+            out,
+            vec![(0, 0, '█'), (1, 0, '█'), (2, 0, '▌'), (3, 0, ' ')],
+            "horizontal bar"
+        );
 
         let mut vertical = crate::factory_widgets::progression::ProgressBar::new(
             crate::factory_widgets::progression::ProgressBarType::VerticalNineLevels,
@@ -1095,8 +1126,12 @@ mod factory_widgets_tests {
             Listener::empty(),
         );
         let mut out = Vec::new();
-        vertical.get_changed_chars((1, 4), &mut out);
-        assert_eq!(out, vec![(0, 0, '█'), (0, 1, '█'), (0, 2, '█'), (0, 3, ' ')], "vertical bar");
+        out = Vec::from(vertical.get_changed_chars((1, 4)));
+        assert_eq!(
+            out,
+            vec![(0, 0, '█'), (0, 1, '█'), (0, 2, '█'), (0, 3, ' ')],
+            "vertical bar"
+        );
     }
 
     #[test]

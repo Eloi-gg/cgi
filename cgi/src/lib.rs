@@ -133,5 +133,5 @@ pub trait Displayable {
     ///
     /// * `size` - The size of the widget.
     /// * `out` - The output vector to store the changed characters.
-    fn get_changed_chars(&mut self, size: (u16, u16), out: &mut Vec<(u16, u16, char)>);
+    fn get_changed_chars(&mut self, size: (u16, u16)) -> &[(u16, u16, char)];
 }

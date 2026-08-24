@@ -132,24 +132,24 @@ impl crate::layout::RenderedLayout {
                     *placement
                 };
                 if inside_placement.width > 0 && inside_placement.height > 0 {
-                    widget
+                    let mut lock = widget
                         .widget
                         .displayable
                         .write()
-                        .unwrap()
-                        .get_changed_chars(
+                        .unwrap();
+
+                    let changes = lock.get_changed_chars(
                             (
                                 inside_placement.width as u16,
                                 inside_placement.height as u16,
-                            ),
-                            &mut local_changes,
+                            )
                         );
                     // (*data).dirty = false;
-                    for (x, y, c) in local_changes.drain(..) {
+                    for (x, y, c) in changes {
                         global_changes.push((
                             x + inside_placement.x as u16,
                             y + inside_placement.y as u16,
-                            c,
+                            *c,
                         ));
                     }
                 }
@@ -246,7 +246,7 @@ mod rendering_tests {
     fn offsets_10_x_10() {
         let mut output = TestOutput::<10, 10>::new();
 
-        let widget = Widget::new(FillWidget { ch: '#' });
+        let widget = Widget::new(FillWidget::new('#'));
         let placement = WidgetPlacement::fullscreen().expand_or_shrink(-1, -1);
         let layout = Layout::new().with_widget(&widget, placement).render(10, 10);
         layout.render_to_output(&mut output);
@@ -259,8 +259,8 @@ mod rendering_tests {
     fn side_by_side_15x8() {
         let mut output = TestOutput::<15, 8>::new();
 
-        let widget1 = Widget::new(FillWidget { ch: '1' });
-        let widget2 = Widget::new(FillWidget { ch: '2' });
+        let widget1 = Widget::new(FillWidget::new('1'));
+        let widget2 = Widget::new(FillWidget::new('2'));
         let placement1 = WidgetPlacement::new(Absolute(1), Absolute(0), Absolute(6), Relative(0.5));
         let placement2 = WidgetPlacement::new(
             placement1.get_bottom_right().0 + 1.into(),
@@ -282,10 +282,10 @@ mod rendering_tests {
     fn more_complex_15x8() {
         let mut output = TestOutput::<15, 8>::new();
 
-        let widget1 = Widget::new(FillWidget { ch: '1' });
-        let widget2 = Widget::new(FillWidget { ch: '2' });
-        let widget3 = Widget::new(FillWidget { ch: '3' });
-        let widget4 = Widget::new(FillWidget { ch: '4' });
+        let widget1 = Widget::new(FillWidget::new('1'));
+        let widget2 = Widget::new(FillWidget::new('2'));
+        let widget3 = Widget::new(FillWidget::new('3'));
+        let widget4 = Widget::new(FillWidget::new('4'));
 
         let placement1 = WidgetPlacement::new(0.0, 0.0, 1.0 / 3.0, 0.5).shift_top_left(1, 0);
         let placement2 = WidgetPlacement::new(
@@ -321,9 +321,9 @@ mod rendering_tests {
     #[test]
     fn relative() {
         let mut output = TestOutput::<12, 4>::new();
-
-        let widget = Widget::new(FillWidget { ch: '1' });
-        let widget2 = Widget::new(FillWidget { ch: '2' });
+        
+        let widget = Widget::new(FillWidget::new('1'));
+        let widget2 = Widget::new(FillWidget::new('2' ));
 
         let placement1 = WidgetPlacement::new(0, 1, 3, 2);
         let placement2 = WidgetPlacement::new(0.0, 0.0, 1.0, 1.0)
