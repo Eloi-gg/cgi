@@ -26,14 +26,14 @@ mod inner {
             format!("FillWidget '{}'", self.ch)
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16)) -> &[(u16, u16, char)] {
+        fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             self.buffer.clear();
             for y in 0..size.1 {
                 for x in 0..size.0 {
                     self.buffer.push((x, y, self.ch));
                 }
             }
-            &self.buffer
+            std::borrow::Cow::Borrowed(&self.buffer)
         }
 
         fn on_event(&mut self, event: Event, actions: &mut crate::ActionList) {
@@ -92,9 +92,9 @@ mod inner {
             format!("Dummy {}", self.data)
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16)) -> &[(u16, u16, char)] {
+        fn get_changed_chars(&mut self, _size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             // No-op for testing
-            return &[];
+            return std::borrow::Cow::Borrowed(&[]);
         }
 
         fn on_event(&mut self, _event: Event, actions: &mut crate::ActionList) {

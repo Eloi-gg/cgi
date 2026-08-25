@@ -37,13 +37,6 @@ pub struct WidgetPlacement {
     height: Coordinate,
 }
 
-pub struct WidgetGroupPlacement {
-    //TODO REMOVE
-    placement: WidgetPlacement,
-    split_x: u32,
-    split_y: u32,
-}
-
 #[derive(Clone, Copy)]
 pub(crate) struct ComputedWidgetPlacement {
     pub x: i32,
@@ -115,15 +108,6 @@ impl WidgetPlacement {
             tl: (self.tl.0 + x.into(), self.tl.1 + y.into()),
             width: self.width,
             height: self.height,
-        }
-    }
-
-    //TODO REMOVE
-    pub fn split_into_group(&self, amt_x: u32, amt_y: u32) -> WidgetGroupPlacement {
-        WidgetGroupPlacement {
-            placement: self.clone(),
-            split_x: amt_x,
-            split_y: amt_y,
         }
     }
 
@@ -244,9 +228,7 @@ impl Layout {
         widget: &Widget<impl Displayable + 'static>,
         placement: WidgetPlacement,
     ) {
-        let widget_hdl = WidgetHdl {
-            widget: widget.as_dyn(),
-        };
+        let widget_hdl = widget.as_hdl();
         self.layout.insert(widget_hdl, placement);
     }
 

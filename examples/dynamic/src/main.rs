@@ -35,13 +35,14 @@ fn main() {
     app.spawn_debug_window().unwrap();
 
     std::thread::spawn(move || {
+        app_connection.send_command(Command::FocusWidget(tb.as_hdl()));
         for i in 0..10 {
             logger.send_message(&format!("{}", i));
             tb.edit().set_text(&i.to_string()); //&format!("{}", i));
-            app_connection.send(cgi::Action::RedrawAll);
+            app_connection.send_action(cgi::Action::RedrawWidget);
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
-        app_connection.send(cgi::Action::ShutDown);
+        app_connection.send_action(cgi::Action::ShutDown);
         return;
     });
 

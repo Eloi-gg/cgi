@@ -63,11 +63,22 @@ pub enum CursorMove {
 }
 
 #[derive(Debug)]
+pub enum Command {
+    FocusWidget(widget::WidgetHdl),
+}
+
+#[derive(Debug)]
+pub enum AppMessage {
+    Command(Command),
+    Action(Action),
+}
+
+#[derive(Debug)]
 pub enum Action {
     RedrawWidget,
     RedrawAll,
     MoveCursor(CursorMove),
-    SendMessage(u64),
+    CustomMessage(u64),
     ShutDown,
 }
 
@@ -82,13 +93,13 @@ impl Action {
             num |= (*byte as u64) << (i * 8);
             i += 1;
             if i > 8 { 
-                r.0.push(Action::SendMessage(num));
+                r.0.push(Action::CustomMessage(num));
                 num = 0;
                 i = 0;
             }
         }
         if i > 0 {
-            r.0.push(Action::SendMessage(num));
+            r.0.push(Action::CustomMessage(num));
         }
         r
     }
@@ -118,7 +129,7 @@ impl From<crossterm::event::Event> for Event {
     }
 }
 
-pub trait Displayable {
+pub trait Displayable : Send + Sync{    
     fn display(&self); // TODO delete
     fn name(&self) -> String; // TODO delete
     fn on_event(&mut self, event: Event, actions: &mut ActionList) {
@@ -129,9 +140,6 @@ pub trait Displayable {
     /// Returns the changed characters as a list of `(column, line, char)` tuples.
     /// The coordinates are relative to the widget. (0,0) is the top-left corner.
     ///
-    /// # Arguments
-    ///
-    /// * `size` - The size of the widget.
-    /// * `out` - The output vector to store the changed characters.
-    fn get_changed_chars(&mut self, size: (u16, u16)) -> &[(u16, u16, char)];
+    /// Implementations may return either a borrowed slice or an owned Vec wrapped in a Cow.
+    fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]>;
 }

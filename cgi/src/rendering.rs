@@ -1,7 +1,10 @@
 use core::panic;
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
-use crate::{layout::ComputedWidgetPlacement, widget::WidgetHdl};
+use crate::{
+    layout::ComputedWidgetPlacement,
+    widget::{WidgetData, WidgetHdl},
+};
 
 pub(super) enum OS {
     Windows,
@@ -46,7 +49,9 @@ pub(crate) trait Output {
 // }
 
 impl crate::layout::RenderedLayout {
-    pub(crate) fn new(mut layout: HashMap<WidgetHdl, ComputedWidgetPlacement>) -> crate::layout::RenderedLayout {
+    pub(crate) fn new(
+        mut layout: HashMap<WidgetHdl, ComputedWidgetPlacement>,
+    ) -> crate::layout::RenderedLayout {
         let mut actions = crate::ActionList::new();
         for (widget, placement) in layout.iter_mut() {
             let inside_placement = if let Ok(data) = widget.widget.data.lock() {
@@ -64,7 +69,10 @@ impl crate::layout::RenderedLayout {
                 *placement
             };
             widget.widget.displayable.write().unwrap().on_event(
-                crate::Event::Resize(inside_placement.width as u16, inside_placement.height as u16),
+                crate::Event::Resize(
+                    inside_placement.width as u16,
+                    inside_placement.height as u16,
+                ),
                 &mut actions,
             );
         }
@@ -73,87 +81,57 @@ impl crate::layout::RenderedLayout {
     }
 
     pub(crate) fn render_to_output(&self, output: &mut dyn Output) {
-        let mut global_changes = Vec::new();
-
         for (widget, placement) in self.0.iter() {
-            self.render_widget(widget, placement, &mut global_changes);
-        }
-
-        for (x, y, c) in global_changes {
-            output.place_char(x, y, c);
+            self.render_widget_to_output(widget, placement, output);
         }
     }
 
     pub(crate) fn render_widget_to_output(
         &self,
         widget: &crate::widget::WidgetHdl,
+        placement: &ComputedWidgetPlacement,
         output: &mut dyn Output,
     ) {
-        let placement = self
-            .0
-            .get(widget)
-            .expect("Widget not found in rendered layout");
-        let mut global_changes = Vec::new();
-        self.render_widget(widget, placement, &mut global_changes);
-        for (x, y, c) in global_changes {
+        // Outline
+        let mut outline_buffer = Vec::new();
+        let has_outline = {
+            let widget_data = &*widget.widget.data.lock().unwrap();
+            self.get_widget_outline_chars(widget_data, placement, &mut outline_buffer)
+        };
+        for (x, y, c) in outline_buffer {
             output.place_char(x, y, c);
+        }
+
+        let placement = if has_outline {
+            placement.shrinked()
+        } else {
+            *placement
+        };
+
+        // Content
+        let mut lock = widget.widget.displayable.write().unwrap();
+        let changes = lock.get_changed_chars((placement.width as u16, placement.height as u16));
+        for (x, y, c) in changes.iter() {
+            output.place_char(x + placement.x as u16, y + placement.y as u16, *c);
         }
     }
 
-    fn render_widget(
+    fn get_widget_outline_chars(
         &self,
-        widget: &crate::widget::WidgetHdl,
+        widget_data: &WidgetData,
         placement: &ComputedWidgetPlacement,
-        global_changes: &mut Vec<(u16, u16, char)>,
-    ) {
-        let mut local_changes = Vec::new();
-
-        if let Ok(data) = widget.widget.data.lock() {
-            //TODO: do we really need `dirty`?
-            if (*data).dirty {
-                let inside_placement = if let Some(ref outline) = (*data).outline {
-                    outline.render(
-                        (placement.width as u16, placement.height as u16),
-                        data.connected,
-                        &mut local_changes,
-                        (*data).title.as_ref(),
-                    );
-
-                    for (x, y, c) in local_changes.drain(..) {
-                        global_changes.push((x + placement.x as u16, y + placement.y as u16, c));
-                    }
-                    ComputedWidgetPlacement {
-                        x: placement.x + 1,
-                        y: placement.y + 1,
-                        width: placement.width - 2,
-                        height: placement.height - 2,
-                    }
-                } else {
-                    *placement
-                };
-                if inside_placement.width > 0 && inside_placement.height > 0 {
-                    let mut lock = widget
-                        .widget
-                        .displayable
-                        .write()
-                        .unwrap();
-
-                    let changes = lock.get_changed_chars(
-                            (
-                                inside_placement.width as u16,
-                                inside_placement.height as u16,
-                            )
-                        );
-                    // (*data).dirty = false;
-                    for (x, y, c) in changes {
-                        global_changes.push((
-                            x + inside_placement.x as u16,
-                            y + inside_placement.y as u16,
-                            *c,
-                        ));
-                    }
-                }
-            }
+        changes: &mut Vec<(u16, u16, char)>,
+    ) -> bool {
+        if let Some(ref outline) = widget_data.outline {
+            outline.render(
+                (placement.width as u16, placement.height as u16),
+                widget_data.connected,
+                changes,
+                widget_data.title.as_ref(),
+            );
+            true
+        } else {
+            false
         }
     }
 }
@@ -173,7 +151,6 @@ impl<const W: usize, const H: usize> Output for TestOutput<W, H> {
             panic!("Attempted to place char out of bounds: ({}, {})", x, y);
         }
     }
-
 }
 
 impl<const W: usize, const H: usize> TestOutput<W, H> {
@@ -238,7 +215,7 @@ mod rendering_tests {
 
     use super::*;
     use crate::coordinate::Coordinate::*;
-    use crate::factory_widgets::{progression::*, text::*, Listener};
+    use crate::factory_widgets::{Listener, progression::*, text::*};
     use crate::test::*;
     use crate::*;
 
@@ -321,9 +298,9 @@ mod rendering_tests {
     #[test]
     fn relative() {
         let mut output = TestOutput::<12, 4>::new();
-        
+
         let widget = Widget::new(FillWidget::new('1'));
-        let widget2 = Widget::new(FillWidget::new('2' ));
+        let widget2 = Widget::new(FillWidget::new('2'));
 
         let placement1 = WidgetPlacement::new(0, 1, 3, 2);
         let placement2 = WidgetPlacement::new(0.0, 0.0, 1.0, 1.0)
@@ -427,6 +404,4 @@ mod rendering_tests {
         let rendered_text = output.to_string();
         crate::test::assert_match_with_test_file(&rendered_text, "9_titles_full");
     }
-
-    
 }

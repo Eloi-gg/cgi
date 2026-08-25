@@ -15,8 +15,8 @@ impl Displayable for CustomWidget {
         format!("CustomWidget {}", self.data)
     }
 
-    fn get_changed_chars(&mut self, size: (u16, u16)) -> &[(u16, u16, char)] {
-        todo!()
+    fn get_changed_chars(&mut self, _size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        std::borrow::Cow::Borrowed(&[])
     }
 
     fn on_event(&mut self, event: cgi::Event, actions: &mut cgi::ActionList) {

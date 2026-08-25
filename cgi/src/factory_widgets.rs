@@ -111,6 +111,11 @@ pub mod progression {
                     '#'
                 };
 
+                // Avoid producing coordinates outside the current sized axis
+                if (i as u16) >= self.size {
+                    continue;
+                }
+
                 if self.is_horizontal() {
                     self.changed_chars.push((i as u16, 0, ch));
                 } else {
@@ -141,12 +146,20 @@ pub mod progression {
             "ProgressBar".to_string()
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16)) -> &[(u16, u16, char)] {
+        fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
-                return &[];
+                return std::borrow::Cow::Borrowed(&[]);
             }
 
-            &self.changed_chars
+            // Update internal size based on requested widget size and recompute the bar characters.
+            let axis_len = if self.is_horizontal() { size.0 } else { size.1 };
+            if self.size != axis_len {
+                self.size = axis_len;
+            }
+            // Recompute characters from current amt and size.
+            self.full_recompute();
+
+            std::borrow::Cow::Borrowed(&self.changed_chars)
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
@@ -195,7 +208,6 @@ pub mod text {
         listener: Listener<Self>,
         align: TextAlign,
         wrapping: Wrapping,
-        out_buffer: Vec<(u16, u16, char)>,
     }
 
     pub struct TextInput {
@@ -221,7 +233,6 @@ pub mod text {
                 layout: vec![0; 1], // Initialize with a single line
                 line_breaks: vec![0],
                 wrapping: Wrapping::PerLetter,
-                out_buffer: Vec::new(),
             }
         }
 
@@ -636,9 +647,9 @@ pub mod text {
             "TextBox".to_string()
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16)) -> &[(u16, u16, char)] {
+        fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
-                return &[];
+                return std::borrow::Cow::Borrowed(&[]);
             }
 
             const NO_WRAPPING_POINTS: u16 = 3;
@@ -669,14 +680,13 @@ pub mod text {
 
             self.changed_chars.clear();
 
-            // changes.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1))); // sort by position
-            // changes.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1); // filter for duplicate positions
-            self.out_buffer = changes
+            // Build an owned Vec for the output and return it via Cow::Owned so callers can take ownership if needed.
+            let out_vec = changes
                 .into_iter()
                 .map(|(pos, c)| (pos.0, pos.1, c))
                 .collect::<Vec<_>>();
 
-            &self.out_buffer
+            std::borrow::Cow::Owned(out_vec)
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
@@ -702,12 +712,13 @@ pub mod text {
             "TextInput".to_string()
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16)) -> &[(u16, u16, char)] {
+        fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
-                return &[];
+                return std::borrow::Cow::Borrowed(&[]);
             }
 
-            &self.text_box.out_buffer
+            // Delegate to the inner TextBox which will return a Cow.
+            self.text_box.get_changed_chars(size)
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
@@ -788,7 +799,7 @@ mod factory_widgets_tests {
 
         text_box.append_char('4');
         text_box.append_text("567");
-        changed = Vec::from(text_box.get_changed_chars((16, 1)));
+        changed = text_box.get_changed_chars((16, 1)).into_owned();
         assert_eq!(
             changed,
             (0..7)
@@ -798,11 +809,11 @@ mod factory_widgets_tests {
         );
 
         changed.drain(..);
-        changed = Vec::from(text_box.get_changed_chars((16, 1)));
+        changed = text_box.get_changed_chars((16, 1)).into_owned();
         assert!(changed.is_empty());
 
         text_box.remove_text(text_box.text_len() - 3, text_box.text_len());
-        changed = Vec::from(text_box.get_changed_chars((16, 1)));
+        changed = text_box.get_changed_chars((16, 1)).into_owned();
         assert_eq!(
             changed,
             (4..7).into_iter().map(|i| (i, 0, ' ')).collect::<Vec<_>>()
@@ -810,7 +821,7 @@ mod factory_widgets_tests {
 
         changed.drain(..);
         text_box.append_text("56");
-        changed = Vec::from(text_box.get_changed_chars((16, 1)));
+        changed = text_box.get_changed_chars((16, 1)).into_owned();
         assert_eq!(
             changed,
             (4..6)
@@ -824,7 +835,7 @@ mod factory_widgets_tests {
         text_box.remove_text(text_box.text_len() - 1, text_box.text_len());
         text_box.remove_text(text_box.text_len() - 1, text_box.text_len());
 
-        changed = Vec::from(text_box.get_changed_chars((16, 2)));
+        changed = text_box.get_changed_chars((16, 2)).into_owned();
         assert_eq!(
             changed,
             vec![
@@ -1112,8 +1123,7 @@ mod factory_widgets_tests {
             0.625,
             Listener::empty(),
         );
-        let mut out = Vec::new();
-        out = Vec::from(bar.get_changed_chars((4, 1)));
+        let mut out = bar.get_changed_chars((4, 1)).into_owned();
         assert_eq!(
             out,
             vec![(0, 0, '█'), (1, 0, '█'), (2, 0, '▌'), (3, 0, ' ')],
@@ -1125,8 +1135,7 @@ mod factory_widgets_tests {
             0.75,
             Listener::empty(),
         );
-        let mut out = Vec::new();
-        out = Vec::from(vertical.get_changed_chars((1, 4)));
+        let mut out = vertical.get_changed_chars((1, 4)).into_owned();
         assert_eq!(
             out,
             vec![(0, 0, '█'), (0, 1, '█'), (0, 2, '█'), (0, 3, ' ')],

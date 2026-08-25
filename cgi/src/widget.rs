@@ -9,7 +9,7 @@ pub(crate) mod connections {
     pub(crate) const TR_CORNER_OFFSET: u8 = 2;
     pub(crate) const BL_CORNER_OFFSET: u8 = 4;
     pub(crate) const BR_CORNER_OFFSET: u8 = 6;
-    
+
     pub(crate) const TL_CORNER: u8 = 1 << TL_CORNER_OFFSET;
     pub(crate) const TR_CORNER: u8 = 1 << TR_CORNER_OFFSET;
     pub(crate) const BL_CORNER: u8 = 1 << BL_CORNER_OFFSET;
@@ -34,8 +34,26 @@ pub struct Widget<T: Displayable + ?Sized> {
 }
 
 #[derive(Debug, Hash)]
-pub struct WidgetHdl {
+pub struct WidgetHdl { //TODO: needs pub?
     pub widget: Widget<dyn Displayable>,
+}
+
+impl WidgetHdl {
+    pub fn from_widget<T: Displayable + 'static>(widget: Widget<T>) -> Self {
+        widget.as_hdl()
+    }
+
+    pub(crate) fn get_data(&self) -> Option<std::sync::MutexGuard<'_, WidgetData>> {
+        self.widget.data.lock().ok()
+    }
+
+    pub(crate) fn get_displayable(&self) -> Option<std::sync::RwLockReadGuard<'_, dyn Displayable>> {
+        self.widget.displayable.read().ok()
+    }
+
+    pub(crate) fn write_displayable(&self) -> Option<std::sync::RwLockWriteGuard<'_, dyn Displayable + 'static>> {
+        self.widget.displayable.write().ok()
+    }
 }
 
 impl Clone for WidgetHdl {
@@ -93,10 +111,12 @@ impl<T: Displayable + 'static> Widget<T> {
         self.data.lock().unwrap().outline = Some(outline.set().clone());
     }
 
-    pub fn as_dyn(&self) -> Widget<dyn Displayable> {
-        Widget {
-            data: self.data.clone(),
-            displayable: self.displayable.clone() as Arc<RwLock<dyn Displayable>>,
+    pub fn as_hdl(&self) -> WidgetHdl {
+        WidgetHdl {
+            widget: Widget {
+                data: self.data.clone(),
+                displayable: self.displayable.clone() as Arc<RwLock<dyn Displayable>>,
+            },
         }
     }
 }

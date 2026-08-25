@@ -1,6 +1,6 @@
 // TODO: this file is a mess of workarounds.
 
-use crate::Action;
+use crate::{Action, AppMessage, Command};
 use crate::{ActionList, rendering::Output};
 use crossterm as ct;
 use crossterm::terminal::ClearType::FromCursorUp;
@@ -23,24 +23,35 @@ pub struct Application {
     pub rendered_layout: RenderedLayout,
     pub output: crate::rendering::LinuxOutput, // TODO : adaptative output (compiles differently depending on OS)
     pub os: crate::rendering::OS,
-    pub connection_rx: mpsc::Receiver<Action>,
+    pub connection_rx: mpsc::Receiver<AppMessage>,
     pub connection_tx: mpsc::Sender<u64>,
+    pub global_action: GlobalAction,
+    pub selected_widget: Option<WidgetHdl>,
 }
 
 /// Represents a connection to the application. Can send actions and receive messages
 pub struct AppConnection {
-    sender: mpsc::Sender<Action>,
+    sender: mpsc::Sender<AppMessage>,
     receiver: mpsc::Receiver<u64>,
 }
 
 impl AppConnection {
-    pub fn send(&self, action: Action) {
-        self.sender.send(action).ok();
+    pub fn send_action(&self, action: Action) {
+        self.sender.send(AppMessage::Action(action));
+    }
+
+    pub fn send_command(&self, command: Command) {
+        self.sender.send(AppMessage::Command(command));
     }
 
     pub fn receive(&self) -> Option<u64> {
         self.receiver.try_recv().ok()
     }
+}
+
+struct GlobalAction {
+    redraw_all: bool,
+    cursor_move: Option<crate::CursorMove>,
 }
 
 impl Application {
@@ -59,6 +70,11 @@ impl Application {
                 os: crate::rendering::OS::get(), // TODO: known at compilation
                 connection_tx: msg_channel_tx,
                 connection_rx: action_channel_rx,
+                global_action: GlobalAction {
+                    redraw_all: false,
+                    cursor_move: None,
+                },
+                selected_widget: None,
             },
             AppConnection {
                 sender: action_channel_tx,
@@ -101,13 +117,6 @@ impl Application {
         self.update();
     }
 
-    fn redraw_all(&mut self) {
-        for widget in self.rendered_layout.0.keys() {
-            self.rendered_layout
-                .render_widget_to_output(widget, &mut self.output);
-        }
-    }
-
     /// Moves the cursor. Does NOT support [`CursorMove::ToRelativeToWidget`] (should be converted before this is called)
     fn move_cursor(&self, cursor_move: crate::CursorMove) {
         use ct::cursor as ctc;
@@ -143,33 +152,61 @@ impl Application {
         Ok(())
     }
 
-    pub fn run(mut self) {
-        ct::terminal::enable_raw_mode().expect("Failed to enable raw mode");
-        let _ = ct::execute!(std::io::stdout(), ct::terminal::EnterAlternateScreen);
-
-        let (cols, rows) = ct::terminal::size().unwrap();
-
-        self.output.flush();
-        self.size_changed(cols, rows);
-        for widget in self.rendered_layout.0.keys() {
+    fn handle_widget_actions(&mut self, action: Action) {
+        let widget = if let Some(widget) = &self.selected_widget {
             widget
-                .widget
-                .displayable
-                .write()
-                .unwrap()
-                .on_event(crate::Event::Resize(cols, rows), &mut ActionList::new());
-            self.rendered_layout
-                .render_widget_to_output(widget, &mut self.output);
+        } else {
+            return;
+        };
+        let placement = self.rendered_layout.get_widget_coords(widget, true);
+        match action {
+            Action::RedrawWidget => {
+                self.rendered_layout
+                    .render_widget_to_output(widget, &placement, &mut self.output);
+            }
+            Action::MoveCursor(cursor_move) => {
+                let mv_cmd = if let crate::CursorMove::ToRelativeToWidget(x, y) = cursor_move {
+                    let (x, y) = (x + placement.x as u16, y + placement.y as u16);
+                    crate::CursorMove::ToAbsolute(x, y)
+                } else {
+                    cursor_move
+                };
+                self.global_action.cursor_move = Some(mv_cmd);
+            }
+            Action::RedrawAll => {
+                self.global_action.redraw_all = true;
+            }
+            Action::ShutDown => {
+                return;
+            }
+            _ => {
+                println!("Unsupported Action: {:?}", action);
+            }
         }
+    }
 
+    fn handle_global_action(&mut self) {
+        if self.global_action.redraw_all == true {
+            self.rendered_layout.render_to_output(&mut self.output);
+            self.global_action.redraw_all = false;
+        }
+        if let Some(cursor_move) = self.global_action.cursor_move {
+            self.move_cursor(cursor_move);
+            self.global_action.cursor_move = None;
+            crate::log::log(&format!("CURSOR MOVE {:?}", cursor_move));
+        }
+    }
+
+    fn handle_received_messages(&mut self) {
         let mut should_redraw_all = false;
-        let mut last_cursor_move = None;
 
-        for _ in 0..500 {
-            while let Some(action) = self.connection_rx.try_recv().ok() {
-                crate::log::log(&format!("CGI core: received action {:?}", action));
-
-                match action {
+        while let Some(msg) = self.connection_rx.try_recv().ok() {
+            crate::log::log(&format!("CGI core: received message {:?}", msg));
+            match msg {
+                AppMessage::Command(command) => match command {
+                    Command::FocusWidget(widget_hdl) => self.selected_widget = Some(widget_hdl),
+                },
+                AppMessage::Action(action) => match action {
                     Action::RedrawAll => {
                         should_redraw_all = true;
                     }
@@ -177,12 +214,33 @@ impl Application {
                         return;
                     }
                     _ => (),
-                }
+                },
             }
-            if should_redraw_all {
-                self.redraw_all();
-                should_redraw_all = false;
-            }
+        }
+        if should_redraw_all {
+            self.rendered_layout.render_to_output(&mut self.output);
+        }
+    }
+
+    pub fn run(mut self) {
+        // Initial setup
+        ct::terminal::enable_raw_mode().expect("Failed to enable raw mode");
+        let _ = ct::execute!(std::io::stdout(), ct::terminal::EnterAlternateScreen);
+        let (cols, rows) = ct::terminal::size().unwrap();
+
+        // Initial resize
+        self.size_changed(cols, rows);
+        for widget in self.rendered_layout.0.keys() {
+            widget
+                .write_displayable()
+                .unwrap()
+                .on_event(crate::Event::Resize(cols, rows), &mut ActionList::new());
+            self.selected_widget = Some(widget.clone());
+        }
+
+        // Event loop
+        for _ in 0..500 {
+            self.handle_received_messages();
 
             if ct::event::poll(std::time::Duration::from_millis(100)).unwrap() {
                 let event = ct::event::read().unwrap();
@@ -198,60 +256,20 @@ impl Application {
                     }
                     _ => {}
                 }
+
                 let mut actions_list = ActionList::new();
+                crate::log::log(&format!("CGI core: handling event {:?}", event));
                 for widget in self.rendered_layout.0.keys() {
                     widget
-                        .widget
-                        .displayable
-                        .write()
+                        .write_displayable()
                         .unwrap()
                         .on_event(event.clone().into(), &mut actions_list);
+                }
+                for action in actions_list.drain() {
+                    self.handle_widget_actions(action);
+                }
 
-                    // TODO: apply actions
-
-                    for action in actions_list.drain() {
-                        match action {
-                            Action::RedrawWidget => {
-                                self.rendered_layout
-                                    .render_widget_to_output(widget, &mut self.output);
-                            }
-                            Action::MoveCursor(cursor_move) => {
-                                let mv_cmd = if let crate::CursorMove::ToRelativeToWidget(x, y) =
-                                    cursor_move
-                                {
-                                    let widget_placement =
-                                        self.rendered_layout.get_widget_coords(widget, true);
-                                    let (x, y) = (
-                                        x + widget_placement.x as u16,
-                                        y + widget_placement.y as u16,
-                                    );
-                                    crate::CursorMove::ToAbsolute(x, y)
-                                } else {
-                                    cursor_move
-                                };
-                                last_cursor_move = Some(mv_cmd);
-                            }
-                            Action::RedrawAll => {
-                                should_redraw_all = true;
-                            }
-                            Action::ShutDown => {
-                                return;
-                            }
-                            _ => {
-                                println!("Unsupported Action: {:?}", action);
-                            }
-                        }
-                    }
-                }
-                if should_redraw_all {
-                    self.redraw_all();
-                    should_redraw_all = false;
-                }
-                if let Some(cursor_move) = last_cursor_move {
-                    self.move_cursor(cursor_move);
-                    last_cursor_move = None;
-                    crate::log::log(&format!("CURSOR MOVE {:?}", cursor_move));
-                }
+                self.handle_global_action();
             }
             // self.update();
             // print!(".");
