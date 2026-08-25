@@ -85,14 +85,14 @@ pub enum Action {
 impl Action {
     pub fn send_messages_from_raw_bytes(bytes: &[u8]) -> ActionList {
         let mut r = ActionList(vec![]);
-        
-        let it =  bytes.iter().rev(); 
+
+        let it = bytes.iter().rev();
         let mut num: u64 = 0;
-        let mut i = 0; 
+        let mut i = 0;
         for byte in it {
             num |= (*byte as u64) << (i * 8);
             i += 1;
-            if i > 8 { 
+            if i == 8 {
                 r.0.push(Action::CustomMessage(num));
                 num = 0;
                 i = 0;
@@ -102,6 +102,24 @@ impl Action {
             r.0.push(Action::CustomMessage(num));
         }
         r
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn send_messages_from_raw_bytes_splits_eight_byte_messages() {
+        let bytes = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09];
+        let actions = Action::send_messages_from_raw_bytes(&bytes);
+
+        assert_eq!(actions.0.len(), 2);
+        assert!(matches!(
+            actions.0[0],
+            Action::CustomMessage(0x203040506070809)
+        ));
+        assert!(matches!(actions.0[1], Action::CustomMessage(0x01)));
     }
 }
 

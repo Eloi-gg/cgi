@@ -393,7 +393,6 @@ mod outlines {
         output.clear();
         layout.render_to_output(&mut output);
         let rendered_text = output.to_string();
-
         assert_match_with_test_file(&rendered_text, "10_border_types");
     }
 

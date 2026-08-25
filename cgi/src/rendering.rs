@@ -99,7 +99,7 @@ impl crate::layout::RenderedLayout {
             self.get_widget_outline_chars(widget_data, placement, &mut outline_buffer)
         };
         for (x, y, c) in outline_buffer {
-            output.place_char(x, y, c);
+            output.place_char(placement.x as u16 + x, placement.y as u16 + y, c);
         }
 
         let placement = if has_outline {
