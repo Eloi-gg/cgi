@@ -77,10 +77,10 @@ pub mod progression {
 
         fn get_set(&self) -> crate::symbols::progress_bar::Set {
             match self.bar_type {
-                ProgressBarType::HorizontalNineLevels => bar::NINE_LEVELS,
-                ProgressBarType::HorizontalThreeLevels => bar::THREE_LEVELS,
-                ProgressBarType::VerticalNineLevels => block::NINE_LEVELS,
-                ProgressBarType::VerticalThreeLevels => block::THREE_LEVELS,
+                ProgressBarType::HorizontalNineLevels => block::NINE_LEVELS,
+                ProgressBarType::HorizontalThreeLevels => block::THREE_LEVELS,
+                ProgressBarType::VerticalNineLevels => bar::NINE_LEVELS,
+                ProgressBarType::VerticalThreeLevels => bar::THREE_LEVELS,
             }
         }
 
@@ -108,7 +108,7 @@ pub mod progression {
                 } else if i == filled && partial_fill > 0.0 {
                     set.get_level(partial_fill)
                 } else {
-                    '#'
+                    ' '
                 };
 
                 // Avoid producing coordinates outside the current sized axis

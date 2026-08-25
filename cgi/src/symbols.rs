@@ -331,19 +331,6 @@ mod outlines {
     use crate::{widget::WidgetBuilder, *};
 
     #[test]
-    fn normal_variable_size() {
-        let widget = &WidgetBuilder::new(FillWidget::new('#'))
-            .with_outline(OutlineStyle::Rounded)
-            .build();
-
-        for size in [3, 6, 10, 21] {
-            let rendered_text =
-                crate::test::get_single_widget_rendered_text(widget, (size, size / 3));
-            println!("{}", rendered_text);
-        }
-    }
-
-    #[test]
     fn long_text() {
         let text_box = crate::factory_widgets::text::TextBox::new(
             &self::test::strings::lorem_ipsum_long(),
