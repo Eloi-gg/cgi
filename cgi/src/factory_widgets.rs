@@ -690,8 +690,6 @@ pub mod text {
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
-            crate::log::log(&format!("on event {:?}", event));
-
             if let crate::Event::Resize(w, h) = event {
                 self.size = (w, h);
                 self.recompute_layout();

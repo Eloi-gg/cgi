@@ -6,6 +6,7 @@ use crossterm as ct;
 use crossterm::terminal::ClearType::FromCursorUp;
 use std::collections::HashMap;
 use std::io::Write;
+use std::process::exit;
 use std::sync::mpsc;
 
 use crate::{
@@ -177,7 +178,7 @@ impl Application {
                 self.global_action.redraw_all = true;
             }
             Action::ShutDown => {
-                return;
+                exit(0);
             }
             _ => {
                 println!("Unsupported Action: {:?}", action);
@@ -198,27 +199,15 @@ impl Application {
     }
 
     fn handle_received_messages(&mut self) {
-        let mut should_redraw_all = false;
-
         while let Some(msg) = self.connection_rx.try_recv().ok() {
             crate::log::log(&format!("CGI core: received message {:?}", msg));
             match msg {
+                AppMessage::Action(action) => self.handle_widget_actions(action),
+
                 AppMessage::Command(command) => match command {
                     Command::FocusWidget(widget_hdl) => self.selected_widget = Some(widget_hdl),
                 },
-                AppMessage::Action(action) => match action {
-                    Action::RedrawAll => {
-                        should_redraw_all = true;
-                    }
-                    Action::ShutDown => {
-                        return;
-                    }
-                    _ => (),
-                },
             }
-        }
-        if should_redraw_all {
-            self.rendered_layout.render_to_output(&mut self.output);
         }
     }
 
@@ -241,6 +230,7 @@ impl Application {
         // Event loop
         for _ in 0..500 {
             self.handle_received_messages();
+            self.handle_global_action();
 
             if ct::event::poll(std::time::Duration::from_millis(100)).unwrap() {
                 let event = ct::event::read().unwrap();

@@ -24,7 +24,7 @@ fn main() {
     let (mut app, app_connection) = cgi::Application::new();
 
     let tb = WidgetBuilder::new(TextBox::default())
-        .with_outline(symbols::OutlineStyle::Double)
+        .with_outline(symbols::OutlineStyle::Normal)
         .build();
 
     let placement = WidgetPlacement::fullscreen();
@@ -36,10 +36,11 @@ fn main() {
 
     std::thread::spawn(move || {
         app_connection.send_command(Command::FocusWidget(tb.as_hdl()));
-        for i in 0..10 {
+        for i in 0..50 {
             logger.send_message(&format!("{}", i));
             tb.edit().set_text(&i.to_string()); //&format!("{}", i));
-            app_connection.send_action(cgi::Action::RedrawWidget);
+            app_connection.send_command(cgi::Command::FocusWidget(tb.as_hdl()));
+            app_connection.send_action(cgi::Action::RedrawAll);
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
         app_connection.send_action(cgi::Action::ShutDown);
