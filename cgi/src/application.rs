@@ -1,6 +1,6 @@
 // TODO: this file is a mess of workarounds.
 
-use crate::{Action, AppMessage, Command};
+use crate::{Action, AppMessage, Command, text_formatting};
 use crate::{ActionList, rendering::Output};
 use crossterm as ct;
 use crossterm::terminal::ClearType::FromCursorUp;
@@ -188,6 +188,7 @@ impl Application {
 
     fn handle_global_action(&mut self) {
         if self.global_action.redraw_all == true {
+            crate::log::log("CGI redraw all");
             self.rendered_layout.render_to_output(&mut self.output);
             self.global_action.redraw_all = false;
         }
@@ -209,6 +210,21 @@ impl Application {
                 },
             }
         }
+    }
+
+    //TODO: delete, testing only
+    pub fn switch_format(&mut self) {
+        use crate::text_formatting::attributes::*;
+        use crate::text_formatting::colors::*;
+
+        let format = BOLD | RED | UNDERLINE | ITALIC;
+        // let format = format | GREY;
+        let format = format | DIM;
+        let format = format | NO_UNDERLINE;
+
+        format.apply();
+        text_formatting::CombinedFormat::reset_global();
+        
     }
 
     pub fn run(mut self) {
@@ -261,6 +277,7 @@ impl Application {
 
                 self.handle_global_action();
             }
+            std::io::stdout().flush().unwrap(); // KEEP
             // self.update();
             // print!(".");
         }

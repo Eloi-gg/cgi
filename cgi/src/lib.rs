@@ -5,6 +5,7 @@ pub mod factory_widgets;
 pub mod layout;
 pub mod widget;
 pub mod log;
+pub mod text_formatting;
 
 mod rendering;
 pub mod symbols;

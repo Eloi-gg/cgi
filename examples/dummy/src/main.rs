@@ -28,6 +28,7 @@ fn scenario_1() {
     use cgi::factory_widgets::{Listener, text::*};
 
     let (mut app, _) = cgi::Application::new();
+    let _ = app.spawn_debug_window();
     let text1 = " Hello, World! \n
 Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
 Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
@@ -54,6 +55,8 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
     app.set_layout_behaviour(|(w, h)| "MainLayout".to_string());
     app.add_layout("MainLayout", layout);
 
+    app.switch_format();
+    
     app.run();
 }
 
@@ -73,11 +76,7 @@ fn scenario_2() {
 }
 
 fn main() {
-    for i in 3..0 {
-        print!("{} ", i);
-    }
-    return;
-    scenario_2();
+    scenario_1();
 
     let (mut app, _) = cgi::Application::new();
 
