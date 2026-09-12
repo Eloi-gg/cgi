@@ -52,6 +52,7 @@ pub mod progression {
         amt: f32,
         size: u16,
         listener: Listener<Self>,
+        color: Option<crate::text_formatting::CombinedFormat>,
     }
 
     impl ProgressBar {
@@ -63,6 +64,7 @@ pub mod progression {
                 amt,
                 size: 0,
                 listener,
+                color: None,
             }
         }
 
@@ -70,6 +72,12 @@ pub mod progression {
             self.amt = amt;
             self.compute_changed_chars();
         }
+
+        pub fn set_color(&mut self, color: crate::text_formatting::Format) {
+            self.color = Some(crate::text_formatting::CombinedFormat::from(color));
+            self.full_recompute();
+        }
+        
 
         fn scaled_amt(&self, amt: f32) -> f32 {
             amt.clamp(0.0, 1.0) * self.size as f32
@@ -176,6 +184,10 @@ pub mod progression {
                 (self.listener.on_event)(event, actions, self);
             }
         }
+
+        fn get_style(&self) -> Option<crate::text_formatting::CombinedFormat> {
+            self.color.clone()
+        }
     }
 }
 
@@ -208,6 +220,7 @@ pub mod text {
         listener: Listener<Self>,
         align: TextAlign,
         wrapping: Wrapping,
+        style: Option<crate::text_formatting::CombinedFormat>,
     }
 
     pub struct TextInput {
@@ -233,6 +246,7 @@ pub mod text {
                 layout: vec![0; 1], // Initialize with a single line
                 line_breaks: vec![0],
                 wrapping: Wrapping::PerLetter,
+                style: None,
             }
         }
 
@@ -303,8 +317,15 @@ pub mod text {
             self.current_length
         }
 
+        //TODO : implement
         fn recompute_layout_from(&mut self, _start: usize) {
             self.recompute_layout();
+        }
+
+        fn mark_every_char_dirty(&mut self) {
+            for i in 0..self.text.len() {
+                self.changed_chars.insert(i);
+            }
         }
 
         fn recompute_layout(&mut self) {
@@ -459,8 +480,17 @@ pub mod text {
         pub fn set_align(&mut self, align: TextAlign) {
             self.align = align;
         }
+
+        pub fn set_style<T: Into<crate::text_formatting::CombinedFormat> + Copy>(&mut self, style: T) {
+            if self.style != Some(style.into()) {
+                self.mark_every_char_dirty();
+                self.style = Some(style.into());
+            }
+        }
     }
 
+
+    //TODO: add styles
     impl TextInput {
         pub fn new(text: &str, listener: Listener<Self>, align: TextAlign) -> Self {
             let mut inner = TextBox::new(text, Listener::empty(), align);
@@ -698,6 +728,10 @@ pub mod text {
             if self.listener.is_listening_for(event.into()) {
                 (self.listener.on_event)(event, actions, self);
             }
+        }
+
+        fn get_style(&self) -> Option<crate::text_formatting::CombinedFormat> {
+            self.style.clone()
         }
     }
 

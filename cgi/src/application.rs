@@ -230,7 +230,10 @@ impl Application {
     pub fn run(mut self) {
         // Initial setup
         ct::terminal::enable_raw_mode().expect("Failed to enable raw mode");
-        let _ = ct::execute!(std::io::stdout(), ct::terminal::EnterAlternateScreen);
+
+        
+        let _ = ct::execute!(std::io::stdout(), ct::terminal::EnterAlternateScreen, ct::cursor::Hide);
+
         let (cols, rows) = ct::terminal::size().unwrap();
 
         // Initial resize

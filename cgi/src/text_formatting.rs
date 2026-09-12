@@ -20,7 +20,6 @@ pub mod attributes {
     pub static NO_ITALIC: Format = Format::Attribute(Attribute::NoItalic);
     pub static NORMAL: Format = Format::Attribute(Attribute::NormalIntensity);
     pub static NO_UNDERLINE: Format = Format::Attribute(Attribute::NoUnderline);
-    
 }
 
 pub mod colors {
@@ -44,7 +43,7 @@ pub mod colors {
     pub static GREY: Format = Format::Color(Color::Grey);
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone, PartialEq)]
 pub struct CombinedFormat {
     foreground: Option<Color>,
     background: Option<Color>, // TODO: implement
@@ -125,6 +124,12 @@ impl BitOr<CombinedFormat> for CombinedFormat {
         self.foreground = rhs.foreground.or(self.foreground);
         self.background = rhs.background.or(self.background);
         self
+    }
+}
+
+impl From<Format> for CombinedFormat {
+    fn from(value: Format) -> Self {
+        CombinedFormat::default() | value
     }
 }
 

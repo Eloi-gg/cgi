@@ -110,10 +110,15 @@ impl crate::layout::RenderedLayout {
 
         // Content
         let mut lock = widget.widget.displayable.write().unwrap();
+        let style = lock.get_style();
         let changes = lock.get_changed_chars((placement.width as u16, placement.height as u16));
+        if let Some(style) = style {
+            style.apply();
+        }
         for (x, y, c) in changes.iter() {
             output.place_char(x + placement.x as u16, y + placement.y as u16, *c);
         }
+        crate::text_formatting::CombinedFormat::reset_global();
     }
 
     fn get_widget_outline_chars(

@@ -155,6 +155,10 @@ pub trait Displayable : Send + Sync{
         let _ = event;
         let _ = actions;
     }
+    fn get_style(&self) -> Option<crate::text_formatting::CombinedFormat> {
+        None
+    }
+    
 
     /// Returns the changed characters as a list of `(column, line, char)` tuples.
     /// The coordinates are relative to the widget. (0,0) is the top-left corner.

@@ -49,13 +49,13 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
     let placement = WidgetPlacement::new(0, 0, 24, 8);
     let placement2 = placement.shift(30, 4).expand_or_shrink(-3, 0).with_width(0.5);
 
+    text_widget.edit().set_style(cgi::text_formatting::attributes::ITALIC | cgi::text_formatting::colors::DARKBLUE);
+    
     let layout = Layout::new()
         .with_widget(&text_widget, placement)
         .with_widget(&text_widget2, placement2);
     app.set_layout_behaviour(|(w, h)| "MainLayout".to_string());
     app.add_layout("MainLayout", layout);
-
-    app.switch_format();
     
     app.run();
 }
