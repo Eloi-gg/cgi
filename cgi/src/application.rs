@@ -17,9 +17,9 @@ use crate::{
 
 //TODO: remove pub
 pub struct Application {
-    pub layouts: HashMap<String, Layout>,
-    pub current_layout: String,
-    pub behavior: fn((u16, u16)) -> String,
+    pub layouts: HashMap<u8, Layout>,
+    pub current_layout: u8,
+    pub behavior: fn((u16, u16)) -> u8,
     pub size: (u16, u16),
     pub rendered_layout: RenderedLayout,
     pub output: crate::rendering::LinuxOutput, // TODO : adaptative output (compiles differently depending on OS)
@@ -63,8 +63,8 @@ impl Application {
         return (
             Application {
                 layouts: HashMap::new(),
-                current_layout: String::new(),
-                behavior: |(_w, _h)| "No behavior set!".to_string(),
+                current_layout: 0,
+                behavior: |(_w, _h)| 0,
                 size: (0, 0),
                 rendered_layout: RenderedLayout(HashMap::new()),
                 output: crate::rendering::LinuxOutput,
@@ -84,10 +84,10 @@ impl Application {
         );
     }
 
-    pub fn add_layout(&mut self, name: &str, layout: Layout) {
-        self.layouts.insert(name.to_string(), layout);
-        if self.current_layout.is_empty() {
-            self.current_layout = name.to_string();
+    pub fn add_layout(&mut self, id: u8, layout: Layout) {
+        self.layouts.insert(id, layout);
+        if self.current_layout == 0 {
+            self.current_layout = id;
         }
     }
 
@@ -105,12 +105,16 @@ impl Application {
         self.rendered_layout.render_to_output(&mut self.output);
     }
 
-    pub fn set_layout_behaviour(&mut self, behavior: fn((u16, u16)) -> String) {
+    pub fn set_layout_behaviour(&mut self, behavior: fn((u16, u16)) -> u8) {
         self.behavior = behavior;
     }
 
     fn size_changed(&mut self, new_x: u16, new_y: u16) {
-        self.current_layout = (self.behavior)((new_x, new_y));
+        let next_layout = (self.behavior)((new_x, new_y));
+        if next_layout != self.current_layout {
+            self.current_layout = next_layout;
+            crate::log::log(format!("Layout changed from {} to {}", self.current_layout, next_layout).as_str());
+        }
         self.size = (new_x, new_y);
         self.rendered_layout =
             self.layouts[&self.current_layout].render(self.size.0 as i32, self.size.1 as i32);

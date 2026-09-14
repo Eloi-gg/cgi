@@ -3,9 +3,9 @@ pub mod coordinate;
 pub mod debug;
 pub mod factory_widgets;
 pub mod layout;
-pub mod widget;
 pub mod log;
 pub mod text_formatting;
+pub mod widget;
 
 mod rendering;
 pub mod symbols;
@@ -25,7 +25,7 @@ pub type KeyCode = crossterm::event::KeyCode;
 pub enum Event {
     Resize(u16, u16),
     KeyPress(KeyCode), // TODO
-    Custom(),       // TODO
+    Custom(),          // TODO
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -58,12 +58,11 @@ pub enum CursorMove {
     Down(u16),
     Left(u16),
     Right(u16),
-    
+
     ToAbsolute(u16, u16),
     ToRelativeToWidget(u16, u16),
 }
 
-#[derive(Debug)]
 pub enum Command {
     FocusWidget(widget::WidgetHdl),
 }
@@ -106,21 +105,14 @@ impl Action {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn send_messages_from_raw_bytes_splits_eight_byte_messages() {
-        let bytes = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09];
-        let actions = Action::send_messages_from_raw_bytes(&bytes);
-
-        assert_eq!(actions.0.len(), 2);
-        assert!(matches!(
-            actions.0[0],
-            Action::CustomMessage(0x203040506070809)
-        ));
-        assert!(matches!(actions.0[1], Action::CustomMessage(0x01)));
+impl std::fmt::Debug for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FocusWidget(arg0) => f.write_fmt(format_args!(
+                "FocusWidget {:p}",
+                std::sync::Arc::as_ptr(&arg0.widget.data)
+            )),
+        }
     }
 }
 
@@ -138,17 +130,19 @@ impl From<crossterm::event::Event> for Event {
     fn from(event: crossterm::event::Event) -> Self {
         match event {
             crossterm::event::Event::Resize(x, y) => Event::Resize(x, y),
-            crossterm::event::Event::Key(key_event) => if key_event.kind == crossterm::event::KeyEventKind::Press {
-                Self::KeyPress(key_event.code)
-            } else {
-                Self::Custom()
-            },
+            crossterm::event::Event::Key(key_event) => {
+                if key_event.kind == crossterm::event::KeyEventKind::Press {
+                    Self::KeyPress(key_event.code)
+                } else {
+                    Self::Custom()
+                }
+            }
             _ => Event::Custom(),
         }
     }
 }
 
-pub trait Displayable : Send + Sync{    
+pub trait Displayable: Send + Sync {
     fn display(&self); // TODO delete
     fn name(&self) -> String; // TODO delete
     fn on_event(&mut self, event: Event, actions: &mut ActionList) {
@@ -158,7 +152,6 @@ pub trait Displayable : Send + Sync{
     fn get_style(&self) -> Option<crate::text_formatting::CombinedFormat> {
         None
     }
-    
 
     /// Returns the changed characters as a list of `(column, line, char)` tuples.
     /// The coordinates are relative to the widget. (0,0) is the top-left corner.

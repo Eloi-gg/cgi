@@ -54,8 +54,8 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
     let layout = Layout::new()
         .with_widget(&text_widget, placement)
         .with_widget(&text_widget2, placement2);
-    app.set_layout_behaviour(|(w, h)| "MainLayout".to_string());
-    app.add_layout("MainLayout", layout);
+    app.set_layout_behaviour(|(w, h)| 0);
+    app.add_layout(0, layout);
     
     app.run();
 }
@@ -69,8 +69,8 @@ fn scenario_2() {
         .build();
     let mut layout = cgi::Layout::new();
     layout.add_widget(&title, WidgetPlacement::fullscreen());
-    app.set_layout_behaviour(|(w, h)| "MainLayout".to_string());
-    app.add_layout("MainLayout", layout);
+    app.set_layout_behaviour(|(w, h)| 0);
+    app.add_layout(0, layout);
 
     app.run();
 }
@@ -96,10 +96,10 @@ fn main() {
     layout.add_widget(&my_widget1, placements[0]);
     layout.add_widget(&my_widget2, placements[1]);
 
-    app.add_layout("MainLayout", layout);
+    app.add_layout(0, layout);
     app.set_layout_behaviour(|(w, h)| {
         println!("b: size {w}, {h}");
-        "MainLayout".to_string()
+        0
     });
 
     std::thread::spawn(move || {

@@ -817,6 +817,28 @@ pub mod text {
     }
 }
 
+pub mod utils {
+    use crate::Displayable;
+
+    pub struct Empty;
+
+    impl Displayable for Empty {
+        fn display(&self) {
+            todo!()
+        }
+
+        fn name(&self) -> String {
+            todo!()
+        }
+
+        fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+            let _ = size;
+            std::borrow::Cow::Owned(Vec::new())
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod factory_widgets_tests {
     use super::text::*;

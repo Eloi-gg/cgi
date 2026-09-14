@@ -111,8 +111,8 @@ fn build_app() -> cgi::Application {
             progress_bar_placement.expand_or_shrink(-1, 0),
         );
 
-    app.set_layout_behaviour(|(..)| "MainLayout".to_string());
-    app.add_layout("MainLayout", layout);
+    app.set_layout_behaviour(|(..)| 0);
+    app.add_layout(0, layout);
     let _ = app.spawn_debug_window();
 
     app
@@ -158,8 +158,8 @@ fn build_app_w_text_input() -> cgi::Application {
             progress_bar_placement.expand_or_shrink(-1, 0),
         );
 
-    app.set_layout_behaviour(|(..)| "MainLayout".to_string());
-    app.add_layout("MainLayout", layout);
+    app.set_layout_behaviour(|(..)| 0);
+    app.add_layout(0, layout);
     let _ = app.spawn_debug_window();
 
     app

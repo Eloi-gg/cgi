@@ -26,12 +26,28 @@ fn main() {
     let tb = WidgetBuilder::new(TextBox::default())
         .with_outline(symbols::OutlineStyle::Normal)
         .build();
+    let empty = WidgetBuilder::new(cgi::factory_widgets::utils::Empty)
+        .with_outline(symbols::OutlineStyle::Rounded)
+        .with_title("Empty")
+        .build();
 
-    let placement = WidgetPlacement::fullscreen();
-    let layout = Layout::new().with_widget(&tb, placement);
+    let fs = WidgetPlacement::fullscreen();
+    let mut horizontal_placement = [WidgetPlacement::default(); 2];
+    let mut vertical_placement = [WidgetPlacement::default(); 2];
 
-    app.set_layout_behaviour(|(..)| "MainLayout".to_string());
-    app.add_layout("MainLayout", layout);
+    fs.split(2, 1, true, &mut horizontal_placement);
+    fs.split(1, 2, true, &mut vertical_placement);
+
+    let h_layout = Layout::new()
+        .with_widget(&tb, horizontal_placement[0])
+        .with_widget(&empty, horizontal_placement[1]);
+    let v_layout = Layout::new()
+        .with_widget(&tb, vertical_placement[0])
+        .with_widget(&empty, vertical_placement[1]);
+
+    app.set_layout_behaviour(|(x, y)| (x > 2 * y) as u8);
+    app.add_layout(0, v_layout);
+    app.add_layout(1, h_layout);
     app.spawn_debug_window().unwrap();
 
     std::thread::spawn(move || {
