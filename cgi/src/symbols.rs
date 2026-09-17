@@ -363,7 +363,7 @@ mod outlines {
             OutlineStyle::Double,
             OutlineStyle::Thick,
         ];
-        let mut placements = [WidgetPlacement::new(0, 0, 3, 3); 4];
+        let mut placements = [WidgetPlacement::new_with_size(0, 0, 3, 3); 4];
         for i in 0..4 {
             for j in 0..i {
                 placements[j] = placements[j].shift(4, 0);
@@ -414,8 +414,8 @@ mod outlines {
         let mut widgets = FillGenerator::new().get_n_widgets(2);
         widgets[0].set_outline(OutlineStyle::Normal);
         widgets[1].set_outline(OutlineStyle::Normal);
-        let p1 = WidgetPlacement::new(0, 0, 2, 2);
-        let p2 = WidgetPlacement::new(2, 2, 2, 2);
+        let p1 = WidgetPlacement::new_with_size(0, 0, 2, 2);
+        let p2 = WidgetPlacement::new_with_size(2, 2, 2, 2);
         let mut mvec = vec![p1, p2];
         layout.connect_and_add_widgets(&mut widgets, mvec.as_mut_slice());
 

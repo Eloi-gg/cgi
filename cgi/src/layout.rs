@@ -55,6 +55,10 @@ impl ComputedWidgetPlacement {
             height: self.height - 2,
         }
     }
+
+    pub fn is_null(&self) -> bool {
+        self.width <= 0 || self.height <= 0
+    }
 }
 
 impl Default for WidgetPlacement {
@@ -68,11 +72,22 @@ impl Default for WidgetPlacement {
 }
 
 impl WidgetPlacement {
-    pub fn new<C: Into<Coordinate>>(x: C, y: C, width: C, height: C) -> Self {
+    pub fn new_with_size<C: Into<Coordinate>>(x: C, y: C, width: C, height: C) -> Self {
         Self {
             tl: (x.into(), y.into()),
             width: width.into(),
             height: height.into(),
+        }
+    }
+
+    pub fn new_with_points<C: Into<Coordinate> + Copy>(x: C, y: C, bottom_right_x: C, bottom_right_y: C) -> Self {
+        let width = bottom_right_x.into() - x.into();
+        let height = bottom_right_y.into() - y.into();
+        
+        Self {
+            tl: (x.into(), y.into()),
+            width,
+            height,
         }
     }
 
@@ -117,7 +132,7 @@ impl WidgetPlacement {
         let width_per_split = self.width / amt_x as f32;
         let height_per_split = self.height / amt_y as f32;
 
-        let unit = Self::new(self.tl.0, self.tl.1, width_per_split, height_per_split);
+        let unit = Self::new_with_size(self.tl.0, self.tl.1, width_per_split, height_per_split);
 
         for i in 0..amt_x {
             for j in 0..amt_y {
@@ -164,6 +179,16 @@ impl WidgetPlacement {
         self.tl.1 = y.into();
         self
     }
+
+    pub fn with_bottom_right_x<C: Into<Coordinate>>(mut self, x: C) -> Self {
+        self.width = x.into() - self.tl.0;
+        self
+    }
+
+    pub fn with_bottom_right_y<C: Into<Coordinate>>(mut self, y: C) -> Self {
+        self.height = y.into() - self.tl.1;
+        self
+    } 
 
     pub fn with_width<C: Into<Coordinate>>(mut self, width: C) -> Self {
         self.width = width.into();
@@ -440,7 +465,7 @@ pub(crate) mod tests {
             let mut dg = super::DummyGenerator::new();
             let widgets = dg.get_n_widgets(1);
             let placement =
-                WidgetPlacement::new(Absolute(10), Absolute(20), Relative(1.0), Relative(0.8));
+                WidgetPlacement::new_with_size(Absolute(10), Absolute(20), Relative(1.0), Relative(0.8));
             layout.add_widget(&widgets[0], placement);
 
             let w1_layout_data = unsafe { get_widget(&layout, 0) };

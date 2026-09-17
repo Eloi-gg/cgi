@@ -18,17 +18,17 @@ pub fn small_layout() -> Layout {
     let mut layout = Layout::new();
     layout.add_widget(
         &screen,
-        WidgetPlacement::new(0, 0, SCREEN_SIZE.0, SCREEN_SIZE.1),
+        WidgetPlacement::new_with_size(0, 0, SCREEN_SIZE.0, SCREEN_SIZE.1),
     );
     layout.append(modules::next_instruction(0, SCREEN_SIZE.1 + 1));
-    layout.append(modules::registers(
-        0,
-        SCREEN_SIZE.1 + modules::NEXT_INSTRUCTION_SIZE.1 + 2,
-    ));
-    layout.append(modules::message_boards(
-        0,
-        SCREEN_SIZE.1 + modules::NEXT_INSTRUCTION_SIZE.1 + modules::REGISTERS_SIZE.1 + 3,
-    ));
+    // layout.append(modules::registers(
+    //     0,
+    //     SCREEN_SIZE.1 + modules::NEXT_INSTRUCTION_SIZE.1 + 2,
+    // ));
+    // layout.append(modules::message_boards(
+    //     0,
+    //     SCREEN_SIZE.1 + modules::NEXT_INSTRUCTION_SIZE.1 + modules::REGISTERS_SIZE.1 + 3,
+    // ));
     layout
 }
 
@@ -58,7 +58,7 @@ mod modules {
     pub(super) fn next_instruction(pos_x: i32, pos_y: i32) -> Layout {
         let empty_listener = fw::Listener::empty();
 
-        let placement = WidgetPlacement::new(
+        let placement = WidgetPlacement::new_with_size(
             pos_x,
             pos_y,
             NEXT_INSTRUCTION_SIZE.0,
@@ -99,7 +99,7 @@ mod modules {
         };
 
         let mut registers_split = [WidgetPlacement::default(); 12];
-        let registers_space = WidgetPlacement::new(pos_x, pos_y, 38, 6);
+        let registers_space = WidgetPlacement::new_with_size(pos_x, pos_y, 38, 6);
         registers_space.expand_or_shrink(-1, -1).shift(1, 0).split(
             3,
             4,
@@ -139,8 +139,8 @@ mod modules {
         old_messages.0.set_style(attributes::DIM | attributes::ITALIC);
         new_messages.0.set_style(attributes::ITALIC);
 
-        let new_placement = WidgetPlacement::new(pos_x, pos_y, 38, 6);
-        let old_placement = new_placement.get_below().with_height(0.2);
+        let new_placement = WidgetPlacement::new_with_size(pos_x, pos_y, 38, 6);
+        let old_placement = new_placement.get_below().with_bottom_right_y(1.0);
 
         for i in 0..3 {
             new_messages.add_message(&format!("NEW {}", i));

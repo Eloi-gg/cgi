@@ -46,7 +46,7 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
         .with_outline(cgi::symbols::OutlineStyle::Rounded)
         .build();
 
-    let placement = WidgetPlacement::new(0, 0, 24, 8);
+    let placement = WidgetPlacement::new_with_size(0, 0, 24, 8);
     let placement2 = placement.shift(30, 4).expand_or_shrink(-3, 0).with_width(0.5);
 
     text_widget.edit().set_style(cgi::text_formatting::attributes::ITALIC | cgi::text_formatting::colors::DARKBLUE);

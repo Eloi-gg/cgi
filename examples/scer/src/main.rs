@@ -12,6 +12,6 @@ fn main() {
     let (mut app, app_connection) = cgi::Application::new();
     app.set_layout_behaviour(|s| ui::get_layout_id(s));
     app.add_layout(0, ui::small_layout());
-
+    app.spawn_debug_window();
     app.run();
 }

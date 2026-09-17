@@ -93,6 +93,10 @@ impl crate::layout::RenderedLayout {
         render_outline: bool,
         output: &mut dyn Output,
     ) {
+        if placement.is_null() {
+            return;
+        }
+
         // Outline
         let mut outline_buffer = Vec::new();
         let has_outline = {
@@ -110,6 +114,12 @@ impl crate::layout::RenderedLayout {
         } else {
             *placement
         };
+
+        crate::log::log(&format!("{:?}", (placement.width, placement.height)));
+
+        if placement.is_null() { // Re-check after shrinkage
+            return;
+        }
 
         // Content
         let mut lock = widget.widget.displayable.write().unwrap();
@@ -246,8 +256,8 @@ mod rendering_tests {
 
         let widget1 = Widget::new(FillWidget::new('1'));
         let widget2 = Widget::new(FillWidget::new('2'));
-        let placement1 = WidgetPlacement::new(Absolute(1), Absolute(0), Absolute(6), Relative(0.5));
-        let placement2 = WidgetPlacement::new(
+        let placement1 = WidgetPlacement::new_with_size(Absolute(1), Absolute(0), Absolute(6), Relative(0.5));
+        let placement2 = WidgetPlacement::new_with_size(
             placement1.get_bottom_right().0 + 1.into(),
             Absolute(0),
             Absolute(6),
@@ -272,8 +282,8 @@ mod rendering_tests {
         let widget3 = Widget::new(FillWidget::new('3'));
         let widget4 = Widget::new(FillWidget::new('4'));
 
-        let placement1 = WidgetPlacement::new(0.0, 0.0, 1.0 / 3.0, 0.5).shift_top_left(1, 0);
-        let placement2 = WidgetPlacement::new(
+        let placement1 = WidgetPlacement::new_with_size(0.0, 0.0, 1.0 / 3.0, 0.5).shift_top_left(1, 0);
+        let placement2 = WidgetPlacement::new_with_size(
             placement1.get_bottom_right().0,
             Absolute(0),
             Relative(2.0 / 3.0),
@@ -281,9 +291,9 @@ mod rendering_tests {
         )
         .expand_or_shrink(-1, 0);
         let placement3 =
-            WidgetPlacement::new(0.0.into(), Hybrid(1, 0.5), (2.0 / 3.0).into(), 0.25.into())
+            WidgetPlacement::new_with_size(0.0.into(), Hybrid(1, 0.5), (2.0 / 3.0).into(), 0.25.into())
                 .expand_or_shrink(-1, 0);
-        let placement4 = WidgetPlacement::new(
+        let placement4 = WidgetPlacement::new_with_size(
             placement3.get_bottom_right().0,
             Hybrid(1, 0.5),
             Relative(1.0 / 3.0),
@@ -310,8 +320,8 @@ mod rendering_tests {
         let widget = Widget::new(FillWidget::new('1'));
         let widget2 = Widget::new(FillWidget::new('2'));
 
-        let placement1 = WidgetPlacement::new(0, 1, 3, 2);
-        let placement2 = WidgetPlacement::new(0.0, 0.0, 1.0, 1.0)
+        let placement1 = WidgetPlacement::new_with_size(0, 1, 3, 2);
+        let placement2 = WidgetPlacement::new_with_size(0.0, 0.0, 1.0, 1.0)
             .shift_top_left(3, 0)
             .expand_or_shrink(-1, 0);
 
@@ -387,18 +397,18 @@ mod rendering_tests {
 
         // Title section: top (lines 0-2, height 3)
         let title_placement =
-            WidgetPlacement::new(Absolute(1), Absolute(0), Absolute(130), Absolute(3));
+            WidgetPlacement::new_with_size(Absolute(1), Absolute(0), Absolute(130), Absolute(3));
 
         // Panels section: middle (lines 5-10, height 6)
         let panels_placement =
-            WidgetPlacement::new(Absolute(1), Absolute(5), Absolute(130), Absolute(6));
+            WidgetPlacement::new_with_size(Absolute(1), Absolute(5), Absolute(130), Absolute(6));
 
         let mut panels_below_placement = [WidgetPlacement::fullscreen(); 2];
         panels_placement.split(2, 1, false, &mut panels_below_placement);
 
         // Progress bar section: bottom (lines 13-15, height 3)
         let progress_bar_placement =
-            WidgetPlacement::new(Absolute(1), Absolute(13), Absolute(130), Absolute(3));
+            WidgetPlacement::new_with_size(Absolute(1), Absolute(13), Absolute(130), Absolute(3));
 
         let mut layout = crate::Layout::new()
             .with_widget(&title, title_placement)

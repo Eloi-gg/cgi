@@ -101,7 +101,7 @@ fn build_app() -> cgi::Application {
         .expand_or_shrink(-1, 0);
     let main_panel_placement = title_placement.get_below().shift_bottom_right(0, -3);
     let progress_bar_placement =
-        WidgetPlacement::new(Absolute(0), Hybrid(-3, 1.0), 1.0.into(), 1.0.into());
+        WidgetPlacement::new_with_size(Absolute(0), Hybrid(-3, 1.0), 1.0.into(), 1.0.into());
 
     let layout = cgi::Layout::new()
         .with_widget(&title, title_placement)
@@ -148,7 +148,7 @@ fn build_app_w_text_input() -> cgi::Application {
         .expand_or_shrink(-1, 0);
     let main_panel_placement = title_placement.get_below().shift_bottom_right(0, -3);
     let progress_bar_placement =
-        WidgetPlacement::new(Absolute(0), Hybrid(-3, 1.0), 1.0.into(), 1.0.into());
+        WidgetPlacement::new_with_size(Absolute(0), Hybrid(-3, 1.0), 1.0.into(), 1.0.into());
 
     let layout = cgi::Layout::new()
         .with_widget(&title, title_placement)

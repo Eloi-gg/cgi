@@ -51,7 +51,7 @@ fn main() {
         .with_height(Hybrid(-3, 0.7))
         .split(2, 1, false, &mut panels_below_placement);
     let progress_bar_placement =
-        WidgetPlacement::new(Absolute(0), Hybrid(-3, 1.0), 1.0.into(), 1.0.into());
+        WidgetPlacement::new_with_size(Absolute(0), Hybrid(-3, 1.0), 1.0.into(), 1.0.into());
 
     let mut layout = cgi::Layout::new()
         .with_widget(&title, title_placement.expand_or_shrink(-1, -1))

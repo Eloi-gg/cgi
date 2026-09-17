@@ -53,10 +53,10 @@ impl Coordinate {
         use Coordinate::*;
 
         match self {
-            Absolute(a) => (*a).max(0), // clamp to 0
+            Absolute(a) => *a, // clamp to 0
             Relative(r) => (size as f32 * *r) as i32,
             Hybrid(a, r) => (*a + (size as f32 * *r) as i32).max(0), // clamp to 0
-        }
+        }.clamp(0, size)
     }
 
     fn relative_part(&self) -> Self {
