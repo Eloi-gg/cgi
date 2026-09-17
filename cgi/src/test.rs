@@ -150,7 +150,7 @@ mod inner {
         let layout = Layout::new().with_widget(widget, placement);
 
         let layout = layout.render(size.0, size.1);
-        layout.render_to_output(&mut output);
+        layout.full_render_to_output(&mut output);
 
         output.to_string()
     }

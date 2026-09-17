@@ -102,7 +102,7 @@ impl Application {
 
     pub fn update(&mut self) {
         // println!("update");
-        self.rendered_layout.render_to_output(&mut self.output);
+        self.rendered_layout.full_render_to_output(&mut self.output);
     }
 
     pub fn set_layout_behaviour(&mut self, behavior: fn((u16, u16)) -> u8) {
@@ -167,7 +167,7 @@ impl Application {
         match action {
             Action::RedrawWidget => {
                 self.rendered_layout
-                    .render_widget_to_output(widget, &placement, &mut self.output);
+                    .render_widget_to_output(widget, &placement, false, &mut self.output);
             }
             Action::MoveCursor(cursor_move) => {
                 let mv_cmd = if let crate::CursorMove::ToRelativeToWidget(x, y) = cursor_move {
@@ -193,7 +193,7 @@ impl Application {
     fn handle_global_action(&mut self) {
         if self.global_action.redraw_all == true {
             crate::log::log("CGI redraw all");
-            self.rendered_layout.render_to_output(&mut self.output);
+            self.rendered_layout.full_render_to_output(&mut self.output);
             self.global_action.redraw_all = false;
         }
         if let Some(cursor_move) = self.global_action.cursor_move {

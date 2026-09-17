@@ -378,7 +378,7 @@ mod outlines {
 
         let layout = layout.render(16, 4);
         output.clear();
-        layout.render_to_output(&mut output);
+        layout.full_render_to_output(&mut output);
         let rendered_text = output.to_string();
         assert_match_with_test_file(&rendered_text, "10_border_types");
     }
@@ -400,7 +400,7 @@ mod outlines {
             // layout.add_widget(&widgets[i], placements[i as usize]);
         }
         layout.connect_and_add_widgets(&mut widgets, placements.as_mut_slice());
-        layout.render(17, 7).render_to_output(&mut output);
+        layout.render(17, 7).full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_match_with_test_file(&rendered_text, "11_split_borders");
@@ -419,7 +419,7 @@ mod outlines {
         let mut mvec = vec![p1, p2];
         layout.connect_and_add_widgets(&mut widgets, mvec.as_mut_slice());
 
-        layout.render(6, 6).render_to_output(&mut output);
+        layout.render(6, 6).full_render_to_output(&mut output);
         let rendered_text = output.to_string();
         println!("{}", rendered_text);
     }

@@ -1,10 +1,11 @@
 use crate::Displayable;
 use crate::coordinate::Coordinate;
 use crate::widget::{Widget, WidgetHdl};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct Layout {
     pub(crate) layout: HashMap<WidgetHdl, WidgetPlacement>,
+    // pub(crate) vertical_connections: HashSet<(WidgetHdl, WidgetHdl)>,
 }
 
 pub(crate) struct RenderedLayout(pub(crate) HashMap<WidgetHdl, ComputedWidgetPlacement>);
@@ -211,6 +212,7 @@ impl Layout {
     pub fn new() -> Self {
         Self {
             layout: HashMap::new(),
+            // vertical_connections: HashSet::new(),
         }
     }
 
@@ -234,7 +236,7 @@ impl Layout {
 
     pub fn connect_and_add_widgets(
         &mut self,
-        widgets: &mut Vec<Widget<impl Displayable + 'static>>, //TODO: intoIterator
+        widgets: &mut [Widget<impl Displayable + 'static>], //TODO: intoIterator
         placements: &mut [WidgetPlacement],
     ) {
         let mut locks = widgets
@@ -295,6 +297,7 @@ impl Layout {
                 .fold(u8::MAX, |acc, (_, flags)| acc & flags);
             let mut is_vertical = ((connection_type & (LEFT | RIGHT)) > 0) as u8;
             let mut is_lateral = ((connection_type & (TOP | BOTTOM)) > 0) as u8;
+
             if is_lateral == 0 && is_vertical == 0 {
                 is_vertical = 1;
                 is_lateral = 1;
@@ -349,6 +352,14 @@ impl Layout {
         }
 
         RenderedLayout::new(rendered_layout)
+    }
+
+    pub fn append(&mut self, other: Layout) {
+        for (widget_hdl, layout_data) in other.layout {
+            if !self.layout.contains_key(&widget_hdl) {
+                self.layout.insert(widget_hdl, layout_data);
+            }
+        }
     }
 }
 

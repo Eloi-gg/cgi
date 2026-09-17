@@ -158,7 +158,7 @@ impl std::ops::Div<f32> for Coordinate {
         use Coordinate::*;
 
         match self {
-            Absolute(a) => Absolute((a as f32 / rhs) as i32),
+            Absolute(a) => Absolute(a / rhs as i32),
             Relative(r) => Relative(r / rhs),
             Hybrid(a, r) => Hybrid((a as f32 / rhs) as i32, r / rhs),
         }

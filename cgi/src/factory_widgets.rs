@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::{Displayable, EventType};
 
+#[derive(Clone)]
 pub struct Listener<T: ?Sized> {
     events: std::collections::HashSet<EventType>,
     on_event: fn(crate::Event, &mut crate::ActionList, &mut T),
@@ -198,18 +199,21 @@ pub mod text {
 
     use super::*;
 
+    #[derive(Clone)]
     pub enum TextAlign {
         Left,
         Center,
         Right,
     }
 
+    #[derive(Clone)]
     pub enum Wrapping {
         Off,
         PerWord,
         PerLetter,
     }
 
+    #[derive(Clone)]
     pub struct TextBox {
         text: Vec<char>,
         layout: Vec<u16>,
@@ -929,7 +933,7 @@ mod factory_widgets_tests {
                 let len = edit.text_len();
                 edit.remove_text(len - 1, len);
             }
-            rendered_layout.render_to_output(&mut output);
+            rendered_layout.full_render_to_output(&mut output);
         }
 
         for _ in 0..3 {
@@ -937,7 +941,7 @@ mod factory_widgets_tests {
             edit.on_event(Event::Resize(16, 1), &mut ActionList::new());
             edit.append_char('x');
         }
-        rendered_layout.render_to_output(&mut output);
+        rendered_layout.full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_eq!(rendered_text, "1234xxx         ");
@@ -959,7 +963,7 @@ mod factory_widgets_tests {
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
-        layout.render(25, 1).render_to_output(&mut output);
+        layout.render(25, 1).full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_match_with_test_file(&rendered_text, "factory_widgets/centered_text");
@@ -980,7 +984,7 @@ mod factory_widgets_tests {
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
-        layout.render(25, 2).render_to_output(&mut output);
+        layout.render(25, 2).full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_match_with_test_file(&rendered_text, "factory_widgets/centered_multiline_text");
@@ -1001,7 +1005,7 @@ mod factory_widgets_tests {
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
-        layout.render(25, 1).render_to_output(&mut output);
+        layout.render(25, 1).full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_match_with_test_file(&rendered_text, "factory_widgets/right_text");
@@ -1022,7 +1026,7 @@ mod factory_widgets_tests {
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
-        layout.render(25, 2).render_to_output(&mut output);
+        layout.render(25, 2).full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_match_with_test_file(&rendered_text, "factory_widgets/right_multiline_text");
@@ -1058,7 +1062,7 @@ mod factory_widgets_tests {
         for step in 0..=16 {
             let amt = 1.0 - increment * (step as f32);
             progress_bar.edit().set_amt(amt);
-            layout.render_to_output(&mut output);
+            layout.full_render_to_output(&mut output);
             let rendered_text = output.to_string();
             eprintln!(
                 "Step {}: amt={}, rendered={:?}, expected={:?}",
@@ -1229,7 +1233,7 @@ mod factory_widgets_tests {
         }
 
         layout.connect_and_add_widgets(&mut widgets, placements.as_mut_slice());
-        layout.render(17, 7).render_to_output(&mut output);
+        layout.render(17, 7).full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         println!("{}", rendered_text);

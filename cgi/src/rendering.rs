@@ -80,9 +80,9 @@ impl crate::layout::RenderedLayout {
         Self(layout)
     }
 
-    pub(crate) fn render_to_output(&self, output: &mut dyn Output) {
+    pub(crate) fn full_render_to_output(&self, output: &mut dyn Output) {
         for (widget, placement) in self.0.iter() {
-            self.render_widget_to_output(widget, placement, output);
+            self.render_widget_to_output(widget, placement, true, output);
         }
     }
 
@@ -90,6 +90,7 @@ impl crate::layout::RenderedLayout {
         &self,
         widget: &crate::widget::WidgetHdl,
         placement: &ComputedWidgetPlacement,
+        render_outline: bool,
         output: &mut dyn Output,
     ) {
         // Outline
@@ -98,8 +99,10 @@ impl crate::layout::RenderedLayout {
             let widget_data = &*widget.widget.data.lock().unwrap();
             self.get_widget_outline_chars(widget_data, placement, &mut outline_buffer)
         };
-        for (x, y, c) in outline_buffer {
-            output.place_char(placement.x as u16 + x, placement.y as u16 + y, c);
+        if render_outline {
+            for (x, y, c) in outline_buffer {
+                output.place_char(placement.x as u16 + x, placement.y as u16 + y, c);
+            }
         }
 
         let placement = if has_outline {
@@ -231,7 +234,7 @@ mod rendering_tests {
         let widget = Widget::new(FillWidget::new('#'));
         let placement = WidgetPlacement::fullscreen().expand_or_shrink(-1, -1);
         let layout = Layout::new().with_widget(&widget, placement).render(10, 10);
-        layout.render_to_output(&mut output);
+        layout.full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_match_with_test_file(&rendered_text, "1_offsets_10x10");
@@ -254,7 +257,7 @@ mod rendering_tests {
             .with_widget(&widget1, placement1)
             .with_widget(&widget2, placement2)
             .render(15, 8);
-        layout.render_to_output(&mut output);
+        layout.full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_match_with_test_file(&rendered_text, "2_side_by_side_15x8");
@@ -294,7 +297,7 @@ mod rendering_tests {
             .with_widget(&widget3, placement3)
             .with_widget(&widget4, placement4)
             .render(15, 8);
-        layout.render_to_output(&mut output);
+        layout.full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_match_with_test_file(&rendered_text, "3_more_complex_15x8");
@@ -319,7 +322,7 @@ mod rendering_tests {
                 .render(*x, 4);
             output.clear();
             output.change_size((*x as usize, 4));
-            layout.render_to_output(&mut output);
+            layout.full_render_to_output(&mut output);
             let rendered_text = output.to_string();
 
             assert_match_with_test_file(&rendered_text, &format!("{}_relative_{}x4", i + 4, *x));
@@ -405,7 +408,7 @@ mod rendering_tests {
 
         let layout = layout.render(132, 16);
         output.clear();
-        layout.render_to_output(&mut output);
+        layout.full_render_to_output(&mut output);
         let rendered_text = output.to_string();
         crate::test::assert_match_with_test_file(&rendered_text, "9_titles_full");
     }

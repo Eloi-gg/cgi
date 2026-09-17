@@ -34,7 +34,8 @@ pub struct Widget<T: Displayable + ?Sized> {
 }
 
 #[derive(Debug, Hash)]
-pub struct WidgetHdl { //TODO: needs pub?
+pub struct WidgetHdl {
+    //TODO: needs pub?
     pub widget: Widget<dyn Displayable>,
 }
 
@@ -47,11 +48,15 @@ impl WidgetHdl {
         self.widget.data.lock().ok()
     }
 
-    pub(crate) fn get_displayable(&self) -> Option<std::sync::RwLockReadGuard<'_, dyn Displayable>> {
+    pub(crate) fn get_displayable(
+        &self,
+    ) -> Option<std::sync::RwLockReadGuard<'_, dyn Displayable>> {
         self.widget.displayable.read().ok()
     }
 
-    pub(crate) fn write_displayable(&self) -> Option<std::sync::RwLockWriteGuard<'_, dyn Displayable + 'static>> {
+    pub(crate) fn write_displayable(
+        &self,
+    ) -> Option<std::sync::RwLockWriteGuard<'_, dyn Displayable + 'static>> {
         self.widget.displayable.write().ok()
     }
 }

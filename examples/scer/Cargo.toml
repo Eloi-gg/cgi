@@ -1,0 +1,8 @@
+[package]
+name = "scer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cgi = { path = "../../cgi" }
+rand = "0.8"
