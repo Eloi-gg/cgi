@@ -80,10 +80,15 @@ impl WidgetPlacement {
         }
     }
 
-    pub fn new_with_points<C: Into<Coordinate> + Copy>(x: C, y: C, bottom_right_x: C, bottom_right_y: C) -> Self {
+    pub fn new_with_points<C: Into<Coordinate> + Copy>(
+        x: C,
+        y: C,
+        bottom_right_x: C,
+        bottom_right_y: C,
+    ) -> Self {
         let width = bottom_right_x.into() - x.into();
         let height = bottom_right_y.into() - y.into();
-        
+
         Self {
             tl: (x.into(), y.into()),
             width,
@@ -188,7 +193,7 @@ impl WidgetPlacement {
     pub fn with_bottom_right_y<C: Into<Coordinate>>(mut self, y: C) -> Self {
         self.height = y.into() - self.tl.1;
         self
-    } 
+    }
 
     pub fn with_width<C: Into<Coordinate>>(mut self, width: C) -> Self {
         self.width = width.into();
@@ -362,18 +367,21 @@ impl Layout {
         for (widget_hdl, layout_data) in self.layout.iter() {
             let x = layout_data.tl.0.compute_at(size_x);
             let y = layout_data.tl.1.compute_at(size_y);
-            let width = layout_data.width.compute_at(size_x);
-            let height = layout_data.height.compute_at(size_y);
-
-            rendered_layout.insert(
-                widget_hdl.clone(),
-                ComputedWidgetPlacement {
-                    x,
-                    y,
-                    width,
-                    height,
-                },
-            );
+            let max_width = size_x - x;
+            let max_height = size_y - y;
+            let width = layout_data.width.compute_at(size_x).min(max_width);
+            let height = layout_data.height.compute_at(size_y).min(max_height);
+            if width > 0 && height > 0 {
+                rendered_layout.insert(
+                    widget_hdl.clone(),
+                    ComputedWidgetPlacement {
+                        x,
+                        y,
+                        width,
+                        height,
+                    },
+                );
+            }
         }
 
         RenderedLayout::new(rendered_layout)
@@ -464,8 +472,12 @@ pub(crate) mod tests {
             let mut layout = Layout::new();
             let mut dg = super::DummyGenerator::new();
             let widgets = dg.get_n_widgets(1);
-            let placement =
-                WidgetPlacement::new_with_size(Absolute(10), Absolute(20), Relative(1.0), Relative(0.8));
+            let placement = WidgetPlacement::new_with_size(
+                Absolute(10),
+                Absolute(20),
+                Relative(1.0),
+                Relative(0.8),
+            );
             layout.add_widget(&widgets[0], placement);
 
             let w1_layout_data = unsafe { get_widget(&layout, 0) };

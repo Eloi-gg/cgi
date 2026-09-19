@@ -21,19 +21,20 @@ pub fn small_layout() -> Layout {
         WidgetPlacement::new_with_size(0, 0, SCREEN_SIZE.0, SCREEN_SIZE.1),
     );
     layout.append(modules::next_instruction(0, SCREEN_SIZE.1 + 1));
-    // layout.append(modules::registers(
-    //     0,
-    //     SCREEN_SIZE.1 + modules::NEXT_INSTRUCTION_SIZE.1 + 2,
-    // ));
-    // layout.append(modules::message_boards(
-    //     0,
-    //     SCREEN_SIZE.1 + modules::NEXT_INSTRUCTION_SIZE.1 + modules::REGISTERS_SIZE.1 + 3,
-    // ));
+    layout.append(modules::registers(
+        0,
+        SCREEN_SIZE.1 + modules::NEXT_INSTRUCTION_SIZE.1 + 2,
+    ));
+    layout.append(modules::message_boards(
+        0,
+        SCREEN_SIZE.1 + modules::NEXT_INSTRUCTION_SIZE.1 + modules::REGISTERS_SIZE.1 + 3,
+    ));
     layout
 }
 
 mod modules {
     use super::*;
+    use cgi::factory_widgets::text::Wrapping;
 
     pub(super) const NEXT_INSTRUCTION_SIZE: (i32, i32) = (38, 4);
     pub(super) const REGISTERS_SIZE: (i32, i32) = (38, 6);
@@ -64,11 +65,14 @@ mod modules {
             NEXT_INSTRUCTION_SIZE.0,
             NEXT_INSTRUCTION_SIZE.1,
         );
-        let widget = &WidgetBuilder::new(fw::text::TextBox::new(
-            "0b00000000100010000000000000100001\npush 0x21",
-            empty_listener.clone(),
-            fw::text::TextAlign::Left,
-        ))
+        let widget = &WidgetBuilder::new(
+            fw::text::TextBox::new(
+                "0b00000000100010000000000000100001\npush 0x21",
+                empty_listener.clone(),
+                fw::text::TextAlign::Left,
+            )
+            .with_wrapping_mode(Wrapping::Off),
+        )
         .with_outline(cgi::symbols::OutlineStyle::Normal)
         .with_title("Next instruction")
         .build();
@@ -131,12 +135,14 @@ mod modules {
 
     pub(super) fn message_boards(pos_x: i32, pos_y: i32) -> Layout {
         use cgi::text_formatting::*;
-        
+
         let mut layout = Layout::new();
         let mut old_messages = MessageBoard::new();
         let mut new_messages = MessageBoard::new();
 
-        old_messages.0.set_style(attributes::DIM | attributes::ITALIC);
+        old_messages
+            .0
+            .set_style(attributes::DIM | attributes::ITALIC);
         new_messages.0.set_style(attributes::ITALIC);
 
         let new_placement = WidgetPlacement::new_with_size(pos_x, pos_y, 38, 6);

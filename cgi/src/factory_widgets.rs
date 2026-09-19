@@ -491,6 +491,21 @@ pub mod text {
                 self.style = Some(style.into());
             }
         }
+
+        pub fn with_wrapping_mode(mut self, wrapping: Wrapping) -> Self {
+            self.set_wrapping_mode(wrapping);
+            self
+        }
+
+        pub fn with_align(mut self, align: TextAlign) -> Self {
+            self.set_align(align);
+            self
+        }
+
+        pub fn with_style<T: Into<crate::text_formatting::CombinedFormat> + Copy>(mut self, style: T) -> Self {
+            self.set_style(style);
+            self
+        }
     }
 
 

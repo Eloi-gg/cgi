@@ -93,10 +93,6 @@ impl crate::layout::RenderedLayout {
         render_outline: bool,
         output: &mut dyn Output,
     ) {
-        if placement.is_null() {
-            return;
-        }
-
         // Outline
         let mut outline_buffer = Vec::new();
         let has_outline = {
@@ -115,11 +111,11 @@ impl crate::layout::RenderedLayout {
             *placement
         };
 
-        crate::log::log(&format!("{:?}", (placement.width, placement.height)));
-
-        if placement.is_null() { // Re-check after shrinkage
+        if placement.is_null() {
             return;
         }
+        
+        crate::log::log(&format!("{:?}", (placement.width, placement.height)));
 
         // Content
         let mut lock = widget.widget.displayable.write().unwrap();
