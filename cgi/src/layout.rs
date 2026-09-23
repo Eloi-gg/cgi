@@ -3,6 +3,100 @@ use crate::coordinate::Coordinate;
 use crate::widget::{Widget, WidgetHdl};
 use std::collections::{HashMap, HashSet};
 
+#[derive(Clone)]
+pub(crate) struct Mask {
+    data: Vec<u32>,
+    width: usize,
+}
+
+impl Mask {
+    fn new_transparent(width: usize, height: usize) -> Self {
+        let data = vec![u32::MAX; (1 + (width / 32)) * height];
+        Mask { data, width }
+    }
+
+    fn add(&mut self, coordinate: ComputedWidgetPlacement) {
+        // Line mask is a reversed bitmask for the line, so that we can AND its complement with the data
+        let mut line_mask = vec![u32::MAX >> coordinate.x];
+        while line_mask.len() <= (coordinate.width / 32) as usize {
+            line_mask.push(u32::MAX);
+        }
+        *line_mask.last_mut().unwrap() ^= u32::MAX >> ((coordinate.x + coordinate.width) % 32);
+        while line_mask.len() < (self.width / 32) + 1 {
+            line_mask.push(0);
+        }
+
+        let data_width = line_mask.len();
+
+        for line_y in coordinate.y..(coordinate.y + coordinate.height) {
+            let line_offset = line_y as usize * data_width;
+            for (data_x, mask) in line_mask.iter().enumerate() {
+                let data_offset = line_offset + data_x;
+                self.data[data_offset] &= !*mask;
+            }
+        }
+    }
+
+    fn combined(&self, other: &Mask) -> Mask {
+        assert_eq!(self.data.len(), other.data.len());
+
+        let mut result = self.clone();
+        result
+            .data
+            .iter_mut()
+            .zip(other.data.iter())
+            .for_each(|(a, b)| *a |= *b);
+        result
+    }
+
+    pub fn at(&self, x: usize, y: usize) -> bool {
+        let line_offset = y as usize * (1 + (self.width / 32)) + x / 32;
+        let data = self.data[line_offset];
+        let bit_offset = x % 32;
+        (data & (1 << (31 - bit_offset))) != 0
+    }
+}
+
+struct MaskStack {
+    unit_masks: Vec<Mask>,
+    combined_masks: Vec<Mask>,
+}
+
+impl MaskStack {
+    pub fn new(mask: Mask) -> Self {
+        MaskStack {
+            unit_masks: vec![mask.clone()],
+            combined_masks: vec![mask],
+        }
+    }
+
+    pub fn push(&mut self, mask: Mask) {
+        self.unit_masks.push(mask.clone());
+        self.combined_masks
+            .push(self.combined_masks.last().unwrap().combined(&mask));
+    }
+
+    pub fn pop(&mut self) {
+        self.unit_masks.pop();
+        self.combined_masks.pop();
+    }
+
+    pub fn set_mask(&mut self, index: usize, mask: Mask) {
+        self.unit_masks[index] = mask.clone();
+        for i in index..self.combined_masks.len() {
+            self.combined_masks[i] = self.combined_masks[i - 1].combined(&self.combined_masks[i]);
+        }
+    }
+}
+
+impl std::ops::Index<usize> for MaskStack {
+    type Output = Mask;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.combined_masks[index]
+    }
+}
+
 pub struct Layout {
     pub(crate) layers: Vec<HashMap<WidgetHdl, WidgetPlacement>>,
     pub(crate) current_layer: usize, // pub(crate) vertical_connections: HashSet<(WidgetHdl, WidgetHdl)>,
@@ -10,13 +104,15 @@ pub struct Layout {
 
 pub(crate) struct RenderedLayout {
     pub(crate) layers: Vec<HashMap<WidgetHdl, ComputedWidgetPlacement>>,
-    pub(crate) current_layer: usize,
+    pub(crate) layer_mapping: HashMap<WidgetHdl, usize>,
+    pub(crate) current_layer: usize, //TODO: is this even used
 }
 
 impl RenderedLayout {
     pub fn new_empty() -> Self {
         RenderedLayout {
             layers: vec![HashMap::new()],
+            layer_mapping: HashMap::new(),
             current_layer: 0,
         }
     }
@@ -390,29 +486,67 @@ impl Layout {
     }
 
     pub(crate) fn render(&self, size_x: i32, size_y: i32) -> RenderedLayout {
-        let mut rendered_layout = HashMap::new();
+        let mut layers = Vec::new();
+        let mut layer_mapping = HashMap::new();
 
-        for (widget_hdl, layout_data) in self.layers[self.current_layer].iter() {
-            let x = layout_data.tl.0.compute_at(size_x);
-            let y = layout_data.tl.1.compute_at(size_y);
-            let max_width = size_x - x;
-            let max_height = size_y - y;
-            let width = layout_data.width.compute_at(size_x).min(max_width);
-            let height = layout_data.height.compute_at(size_y).min(max_height);
-            if width > 0 && height > 0 {
-                rendered_layout.insert(
-                    widget_hdl.clone(),
-                    ComputedWidgetPlacement {
-                        x,
-                        y,
-                        width,
-                        height,
-                    },
-                );
+        for (layer_idx, layer) in self.layers.iter().enumerate() {
+            let mut rendered_layer = HashMap::new();
+            for (widget_hdl, layout_data) in layer.iter() {
+                let x = layout_data.tl.0.compute_at(size_x);
+                let y = layout_data.tl.1.compute_at(size_y);
+                let max_width = size_x - x;
+                let max_height = size_y - y;
+                let width = layout_data.width.compute_at(size_x).min(max_width);
+                let height = layout_data.height.compute_at(size_y).min(max_height);
+                if width > 0 && height > 0 {
+                    layer_mapping.insert(widget_hdl.clone(), layer_idx);
+                    rendered_layer.insert(
+                        widget_hdl.clone(),
+                        ComputedWidgetPlacement {
+                            x,
+                            y,
+                            width,
+                            height,
+                        },
+                    );
+                }
             }
+            layers.push(rendered_layer);
         }
 
-        RenderedLayout::new(rendered_layout)
+        let mut r = RenderedLayout {
+            layers,
+            layer_mapping,
+            current_layer: self.current_layer,
+        };
+
+        // All this is just to send a resize event to the widgets
+        let mut actions = crate::ActionList::new();
+        for (widget, placement) in r.full_iter_mut() {
+            let inside_placement = if let Ok(data) = widget.widget.data.lock() {
+                if (*data).outline.is_some() {
+                    ComputedWidgetPlacement {
+                        x: placement.x + 1,
+                        y: placement.y + 1,
+                        width: placement.width - 2,
+                        height: placement.height - 2,
+                    }
+                } else {
+                    *placement
+                }
+            } else {
+                *placement
+            };
+            widget.widget.displayable.write().unwrap().on_event(
+                crate::Event::Resize(
+                    inside_placement.width as u16,
+                    inside_placement.height as u16,
+                ),
+                &mut actions,
+            );
+        }
+
+        r
     }
 
     pub fn append(&mut self, other: Layout) {
@@ -582,19 +716,27 @@ pub(crate) mod tests {
                 (b, f)
             };
             let transparent_widget = WidgetBuilder::new(factory_widgets::text::TextBox::new(
-                "@",
+                "@   ",
                 Listener::empty(),
                 factory_widgets::text::TextAlign::Left,
             ))
             .with_outline(OutlineStyle::Rounded)
             .transparent()
             .build();
+            let not_transparent_widget = WidgetBuilder::new(factory_widgets::text::TextBox::new(
+                "@",
+                Listener::empty(),
+                factory_widgets::text::TextAlign::Left,
+            ))
+            .with_outline(OutlineStyle::Rounded)
+            .build();
 
             // PLACEMENTS
             let text_box_placement = WidgetPlacement::fullscreen();
             let fill_back_placement = WidgetPlacement::fullscreen().expand_or_shrink(-3, -2);
-            let fill_front_placement = WidgetPlacement::new_with_size(4, 3, 6, 3);
-            let transparent_placement = WidgetPlacement::new_with_size(4, 7, 6, 3);
+            let fill_front_placement = WidgetPlacement::new_with_size(3, 1, 6, 3);
+            let transparent_placement = WidgetPlacement::new_with_size(3, 4, 6, 3);
+            let not_transparent_placement = transparent_placement.shift(6, 0);
 
             layout.set_layer(0);
             layout.add_widget(&fill_widget_back, fill_back_placement);
@@ -603,6 +745,7 @@ pub(crate) mod tests {
             layout.set_layer(2);
             layout.add_widget(&fill_widget_front, fill_front_placement);
             layout.add_widget(&transparent_widget, transparent_placement);
+            layout.add_widget(&not_transparent_widget, not_transparent_placement);
 
             // RENDERING
             let layout = layout.render(16, 8);
@@ -611,6 +754,96 @@ pub(crate) mod tests {
             let rendered_text = output.to_string();
             println!("{}", rendered_text);
             assert_match_with_test_file(&rendered_text, "12_layering");
+        }
+
+        #[test]
+        fn mask() {
+            // REVERSED:
+            // 1100     0000     1100
+            // 1100  +  0111  =  1111
+            // 0000     0111     0111
+            // 0000     0000     0000
+            // EXPECTED:
+            // 0011
+            // 0000
+            // 1000
+            // 1111
+
+            let c1 = ComputedWidgetPlacement {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 2,
+            };
+            let c2 = ComputedWidgetPlacement {
+                x: 1,
+                y: 1,
+                width: 3,
+                height: 2,
+            };
+
+            let mut mask = Mask::new_transparent(4, 4);
+            mask.add(c1);
+            mask.add(c2);
+            mask.data.iter().for_each(|e| println!("{:032b}", e));
+            assert_eq!(
+                mask.data,
+                vec![
+                    !(0b1100 << 28),
+                    !(0b1111 << 28),
+                    !(0b0111 << 28),
+                    !(0b0000 << 28)
+                ]
+            );
+
+            let expected = [[0, 0, 1, 1], [0, 0, 0, 0], [1, 0, 0, 0], [1, 1, 1, 1]];
+
+            for (line_idx, line) in expected.into_iter().enumerate() {
+                line.iter().enumerate().for_each(|(i, e)| {
+                    // println!("at {},{}: {}", i, line_idx, mask.at(i, line_idx));
+                    assert_eq!(mask.at(i, line_idx), *e == 1)
+                });
+            }
+        }
+
+        #[test]
+        fn big_mask() {
+            let c1 = ComputedWidgetPlacement {
+                x: 0,
+                y: 0,
+                width: 40,
+                height: 2,
+            };
+            let c2 = ComputedWidgetPlacement {
+                x: 5,
+                y: 1,
+                width: 38,
+                height: 2,
+            };
+
+            let mut mask = Mask::new_transparent(70, 4);
+            mask.add(c1);
+            mask.add(c2);
+
+            mask.data
+                .chunks(3)
+                .for_each(|e| println!("{:032b} {:032b} {:032b}", e[0], e[1], e[2]));
+
+            let expected = vec![
+                0b00000000000000000000000000000000,
+                0b00000000111111111111111111111111,
+                0b11111111111111111111111111111111,
+                0b00000000000000000000000000000000,
+                0b00000000000111111111111111111111,
+                0b11111111111111111111111111111111,
+                0b11111000000000000000000000000000,
+                0b00000000000111111111111111111111,
+                0b11111111111111111111111111111111,
+                0b11111111111111111111111111111111,
+                0b11111111111111111111111111111111,
+                0b11111111111111111111111111111111,
+            ];
+            assert_eq!(mask.data, expected);
         }
     }
 }

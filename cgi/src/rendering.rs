@@ -49,37 +49,6 @@ pub(crate) trait Output {
 // }
 
 impl crate::layout::RenderedLayout {
-    pub(crate) fn new(
-        mut layout: HashMap<WidgetHdl, ComputedWidgetPlacement>,
-    ) -> crate::layout::RenderedLayout {
-        let mut actions = crate::ActionList::new();
-        for (widget, placement) in layout.iter_mut() {
-            let inside_placement = if let Ok(data) = widget.widget.data.lock() {
-                if let Some(_) = (*data).outline {
-                    ComputedWidgetPlacement {
-                        x: placement.x + 1,
-                        y: placement.y + 1,
-                        width: placement.width - 2,
-                        height: placement.height - 2,
-                    }
-                } else {
-                    *placement
-                }
-            } else {
-                *placement
-            };
-            widget.widget.displayable.write().unwrap().on_event(
-                crate::Event::Resize(
-                    inside_placement.width as u16,
-                    inside_placement.height as u16,
-                ),
-                &mut actions,
-            );
-        }
-
-        Self { layers: vec![layout], current_layer: 0 }
-    }
-
     pub(crate) fn full_render_to_output(&self, output: &mut dyn Output) {
         for (widget, placement) in self.full_iter() {
             self.render_widget_to_output(widget, placement, true, output);
