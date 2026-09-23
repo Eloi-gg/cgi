@@ -4,19 +4,29 @@ use crate::widget::{Widget, WidgetHdl};
 use std::collections::{HashMap, HashSet};
 
 pub struct Layout {
-    pub(crate) layout: HashMap<WidgetHdl, WidgetPlacement>,
-    // pub(crate) vertical_connections: HashSet<(WidgetHdl, WidgetHdl)>,
+    pub(crate) layers: Vec<HashMap<WidgetHdl, WidgetPlacement>>,
+    pub(crate) current_layer: usize, // pub(crate) vertical_connections: HashSet<(WidgetHdl, WidgetHdl)>,
 }
 
-pub(crate) struct RenderedLayout(pub(crate) HashMap<WidgetHdl, ComputedWidgetPlacement>);
+pub(crate) struct RenderedLayout {
+    pub(crate) layers: Vec<HashMap<WidgetHdl, ComputedWidgetPlacement>>,
+    pub(crate) current_layer: usize,
+}
 
 impl RenderedLayout {
+    pub fn new_empty() -> Self {
+        RenderedLayout {
+            layers: vec![HashMap::new()],
+            current_layer: 0,
+        }
+    }
+
     pub fn get_widget_coords(
         &self,
         widget: &WidgetHdl,
         only_insides: bool,
     ) -> ComputedWidgetPlacement {
-        let placement = self.0[widget];
+        let placement = self.layers[self.current_layer][widget];
 
         return if only_insides {
             let outlined = widget.widget.data.lock().unwrap().outline.is_some();
@@ -28,6 +38,16 @@ impl RenderedLayout {
         } else {
             placement
         };
+    }
+
+    pub fn full_iter(&self) -> impl Iterator<Item = (&WidgetHdl, &ComputedWidgetPlacement)> {
+        self.layers.iter().flat_map(|l| l.iter())
+    }
+
+    pub fn full_iter_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&WidgetHdl, &mut ComputedWidgetPlacement)> {
+        self.layers.iter_mut().flat_map(|l| l.iter_mut())
     }
 }
 
@@ -241,8 +261,8 @@ impl WidgetPlacement {
 impl Layout {
     pub fn new() -> Self {
         Self {
-            layout: HashMap::new(),
-            // vertical_connections: HashSet::new(),
+            layers: vec![HashMap::new()],
+            current_layer: 0, // vertical_connections: HashSet::new(),
         }
     }
 
@@ -255,13 +275,21 @@ impl Layout {
         self
     }
 
+    pub fn set_layer(&mut self, layer_id: usize) {
+        while self.layers.len() <= layer_id {
+            self.layers.push(HashMap::new());
+        }
+
+        self.current_layer = layer_id;
+    }
+
     pub fn add_widget(
         &mut self,
         widget: &Widget<impl Displayable + 'static>,
         placement: WidgetPlacement,
     ) {
         let widget_hdl = widget.as_hdl();
-        self.layout.insert(widget_hdl, placement);
+        self.layers[self.current_layer].insert(widget_hdl, placement);
     }
 
     pub fn connect_and_add_widgets(
@@ -364,7 +392,7 @@ impl Layout {
     pub(crate) fn render(&self, size_x: i32, size_y: i32) -> RenderedLayout {
         let mut rendered_layout = HashMap::new();
 
-        for (widget_hdl, layout_data) in self.layout.iter() {
+        for (widget_hdl, layout_data) in self.layers[self.current_layer].iter() {
             let x = layout_data.tl.0.compute_at(size_x);
             let y = layout_data.tl.1.compute_at(size_y);
             let max_width = size_x - x;
@@ -388,9 +416,14 @@ impl Layout {
     }
 
     pub fn append(&mut self, other: Layout) {
-        for (widget_hdl, layout_data) in other.layout {
-            if !self.layout.contains_key(&widget_hdl) {
-                self.layout.insert(widget_hdl, layout_data);
+        for (layer_idx, other_layer) in other.layers.iter().enumerate() {
+            if self.layers.len() <= layer_idx {
+                self.layers.push(HashMap::new());
+            }
+            for (widget_hdl, layout_data) in other_layer {
+                if !self.layers[layer_idx].contains_key(&widget_hdl) {
+                    self.layers[layer_idx].insert(widget_hdl.clone(), *layout_data);
+                }
             }
         }
     }
@@ -431,15 +464,19 @@ pub(crate) mod tests {
     }
 
     mod layout {
-        use crate::layout;
-
         use super::super::*;
         use super::Coordinate::*;
+        use crate::factory_widgets::Listener;
+        use crate::rendering::TestOutput;
+        use crate::symbols::OutlineStyle;
+        use crate::test;
+        use crate::test::{FillGenerator, assert_match_with_test_file};
+        use crate::{ActionList, WidgetBuilder, factory_widgets, layout};
 
         // Looks through the computed_layout to find a Dummy widget with its data matching widget_data
         // ComputedLayout MUST contain only Dummy
         unsafe fn get_widget(layout: &Layout, widget_data: u32) -> Option<&WidgetPlacement> {
-            for (widget_hdl, layout_data) in &layout.layout {
+            for (widget_hdl, layout_data) in &layout.layers[layout.current_layer] {
                 let r = widget_hdl.widget.displayable.read().unwrap();
                 let x = &*r as *const dyn Displayable as *const tests::Dummy;
                 let current_widget_data = unsafe { (*x).data };
@@ -455,7 +492,7 @@ pub(crate) mod tests {
             layout: &RenderedLayout,
             widget_data: u32,
         ) -> Option<&ComputedWidgetPlacement> {
-            for (widget_hdl, placement) in &layout.0 {
+            for (widget_hdl, placement) in &layout.layers[layout.current_layer] {
                 let r = widget_hdl.widget.displayable.read().unwrap();
                 let x = &*r as *const dyn Displayable as *const tests::Dummy;
                 let current_widget_data = unsafe { (*x).data };
@@ -489,10 +526,10 @@ pub(crate) mod tests {
 
             let rendered_layout = layout.render(100, 100);
 
-            let widget = rendered_layout.0.iter().next().unwrap();
+            let widget = rendered_layout.layers[0].iter().next().unwrap();
             assert_eq!(widget.1.x, 10);
             assert_eq!(widget.1.y, 20);
-            assert_eq!(widget.1.width, 100);
+            assert_eq!(widget.1.width, 90); // Width 100 but gets clipped
             assert_eq!(widget.1.height, 100 * 8 / 10);
         }
 
@@ -522,6 +559,58 @@ pub(crate) mod tests {
                 assert_eq!(widget_layout.width, 100);
                 assert_eq!(widget_layout.height, 100);
             }
+        }
+
+        #[test]
+        fn layering() {
+            let mut output = TestOutput::<16, 8>::new();
+            let mut layout = Layout::new();
+
+            // WIDGETS
+            let text_box_widget = WidgetBuilder::new(factory_widgets::text::TextBox::new(
+                &test::strings::lorem_ipsum_long(),
+                Listener::empty(),
+                factory_widgets::text::TextAlign::Left,
+            ))
+            .with_outline(OutlineStyle::Thick)
+            .build();
+            let (fill_widget_back, fill_widget_front) = {
+                let mut v = FillGenerator::new().get_n_widgets(2);
+                let mut f = v.pop().unwrap();
+                let b = v.pop().unwrap();
+                f.set_outline(OutlineStyle::Double);
+                (b, f)
+            };
+            let transparent_widget = WidgetBuilder::new(factory_widgets::text::TextBox::new(
+                "@",
+                Listener::empty(),
+                factory_widgets::text::TextAlign::Left,
+            ))
+            .with_outline(OutlineStyle::Rounded)
+            .transparent()
+            .build();
+
+            // PLACEMENTS
+            let text_box_placement = WidgetPlacement::fullscreen();
+            let fill_back_placement = WidgetPlacement::fullscreen().expand_or_shrink(-3, -2);
+            let fill_front_placement = WidgetPlacement::new_with_size(4, 3, 6, 3);
+            let transparent_placement = WidgetPlacement::new_with_size(4, 7, 6, 3);
+
+            layout.set_layer(0);
+            layout.add_widget(&fill_widget_back, fill_back_placement);
+            layout.set_layer(1);
+            layout.add_widget(&text_box_widget, text_box_placement);
+            layout.set_layer(2);
+            layout.add_widget(&fill_widget_front, fill_front_placement);
+            layout.add_widget(&transparent_widget, transparent_placement);
+
+            // RENDERING
+            let layout = layout.render(16, 8);
+            output.clear();
+            layout.full_render_to_output(&mut output);
+            let rendered_text = output.to_string();
+            println!("{}", rendered_text);
+            assert_match_with_test_file(&rendered_text, "12_layering");
         }
     }
 }

@@ -59,7 +59,7 @@ fn main() {
             app_connection.send_action(cgi::Action::RedrawAll);
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
-        app_connection.send_action(cgi::Action::ShutDown);
+        app_connection.send_command(cgi::Command::ShutDown);
         return;
     });
 

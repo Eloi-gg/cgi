@@ -77,11 +77,11 @@ impl crate::layout::RenderedLayout {
             );
         }
 
-        Self(layout)
+        Self { layers: vec![layout], current_layer: 0 }
     }
 
     pub(crate) fn full_render_to_output(&self, output: &mut dyn Output) {
-        for (widget, placement) in self.0.iter() {
+        for (widget, placement) in self.full_iter() {
             self.render_widget_to_output(widget, placement, true, output);
         }
     }

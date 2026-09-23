@@ -21,10 +21,11 @@ pub(crate) mod connections {
 
 #[derive(Debug)]
 pub(crate) struct WidgetData {
-    pub dirty: bool,
+    pub visible: bool,
     pub outline: Option<crate::symbols::line::Set>,
     pub title: Option<String>,
     pub connected: u8,
+    pub transparent: bool
 }
 
 #[derive(Debug)]
@@ -90,10 +91,11 @@ impl<T: Displayable + 'static> Widget<T> {
     pub fn new(displayable: T) -> Self {
         Widget {
             data: Arc::new(Mutex::new(WidgetData {
-                dirty: true,
+                visible: true,
                 outline: None,
                 title: None,
                 connected: 0,
+                transparent: false,
             })),
             displayable: Arc::new(RwLock::new(displayable)),
         }
@@ -109,11 +111,15 @@ impl<T: Displayable + 'static> Widget<T> {
     }
 
     pub fn repaint(&mut self) {
-        self.data.lock().unwrap().dirty = true;
+        self.data.lock().unwrap().visible = true;
     }
 
     pub fn set_outline(&mut self, outline: crate::symbols::OutlineStyle) {
         self.data.lock().unwrap().outline = Some(outline.set().clone());
+    }
+
+    pub fn set_transparency(&mut self, transparency: bool) {
+        self.data.lock().unwrap().transparent = transparency;
     }
 
     pub fn as_hdl(&self) -> WidgetHdl {
@@ -134,9 +140,10 @@ impl std::fmt::Debug for Widget<dyn Displayable> {
 
 pub struct WidgetBuilder<T: Displayable + 'static> {
     displayable: T,
-    dirty: bool,
+    visible: bool,
     outline: Option<crate::symbols::line::Set>,
     title: Option<String>,
+    transparent: bool
 }
 
 impl<T: Displayable + 'static> WidgetBuilder<T> {
@@ -147,9 +154,10 @@ impl<T: Displayable + 'static> WidgetBuilder<T> {
     pub fn new(displayable: T) -> Self {
         WidgetBuilder {
             displayable,
-            dirty: true,
+            visible: true,
             outline: None,
             title: None,
+            transparent: false
         }
     }
 
@@ -161,14 +169,25 @@ impl<T: Displayable + 'static> WidgetBuilder<T> {
         self
     }
 
+    pub fn transparent(mut self) -> Self {
+        self.transparent = true;
+        self
+    }
+
+    pub fn invisible(mut self) -> Self {
+        self.visible = false;
+        self
+    }
+
     /// Build the final `Widget` instance
     pub fn build(self) -> Widget<T> {
         Widget {
             data: Arc::new(Mutex::new(WidgetData {
-                dirty: self.dirty,
+                visible: self.visible,
                 outline: self.outline,
                 title: self.title,
                 connected: 0,
+                transparent: self.transparent,
             })),
             displayable: Arc::new(RwLock::new(self.displayable)),
         }

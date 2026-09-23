@@ -66,7 +66,7 @@ impl Application {
                 current_layout: 0,
                 behavior: |(_w, _h)| 0,
                 size: (0, 0),
-                rendered_layout: RenderedLayout(HashMap::new()),
+                rendered_layout: RenderedLayout::new_empty(),
                 output: crate::rendering::LinuxOutput,
                 os: crate::rendering::OS::get(), // TODO: known at compilation
                 connection_tx: msg_channel_tx,
@@ -94,7 +94,7 @@ impl Application {
     pub fn print_state(&self) {
         for (name, layout) in &self.layouts {
             println!("Layout: {}", name);
-            for widget in &layout.layout {
+            for widget in &layout.layers[layout.current_layer] {
                 println!("  Widget: {:?}", widget.0.widget);
             }
         }
@@ -181,9 +181,6 @@ impl Application {
             Action::RedrawAll => {
                 self.global_action.redraw_all = true;
             }
-            Action::ShutDown => {
-                exit(0);
-            }
             _ => {
                 println!("Unsupported Action: {:?}", action);
             }
@@ -211,6 +208,10 @@ impl Application {
 
                 AppMessage::Command(command) => match command {
                     Command::FocusWidget(widget_hdl) => self.selected_widget = Some(widget_hdl),
+                    Command::ShutDown => {
+                        crate::log::log("CGI core: shutting down");
+                        exit(0);
+                    }
                 },
             }
         }
@@ -242,7 +243,7 @@ impl Application {
 
         // Initial resize
         self.size_changed(cols, rows);
-        for widget in self.rendered_layout.0.keys() {
+        for widget in self.rendered_layout.layers[self.rendered_layout.current_layer].keys() {
             widget
                 .write_displayable()
                 .unwrap()
@@ -272,7 +273,7 @@ impl Application {
 
                 let mut actions_list = ActionList::new();
                 crate::log::log(&format!("CGI core: handling event {:?}", event));
-                for widget in self.rendered_layout.0.keys() {
+                for widget in self.rendered_layout.layers[self.rendered_layout.current_layer].keys() {
                     widget
                         .write_displayable()
                         .unwrap()

@@ -340,11 +340,6 @@ mod outlines {
         let widget = WidgetBuilder::new(text_box)
             .with_outline(OutlineStyle::Thick)
             .build();
-        widget
-            .displayable
-            .write()
-            .unwrap()
-            .on_event(crate::Event::Resize(14, 6), &mut ActionList::new());
 
         let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
         println!("{}", rendered_text);

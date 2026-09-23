@@ -65,6 +65,7 @@ pub enum CursorMove {
 
 pub enum Command {
     FocusWidget(widget::WidgetHdl),
+    ShutDown,
 }
 
 #[derive(Debug)]
@@ -77,9 +78,9 @@ pub enum AppMessage {
 pub enum Action {
     RedrawWidget,
     RedrawAll,
+    SetVisible(bool),
     MoveCursor(CursorMove),
     CustomMessage(u64),
-    ShutDown,
 }
 
 impl Action {
@@ -112,6 +113,7 @@ impl std::fmt::Debug for Command {
                 "FocusWidget {:p}",
                 std::sync::Arc::as_ptr(&arg0.widget.data)
             )),
+            Self::ShutDown => f.write_str("ShutDown"),
         }
     }
 }
