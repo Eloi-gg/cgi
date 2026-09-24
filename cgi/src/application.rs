@@ -167,7 +167,7 @@ impl Application {
         match action {
             Action::RedrawWidget => {
                 self.rendered_layout
-                    .render_widget_to_output(widget, &placement, false, &mut self.output);
+                    .render_single_widget_to_output(widget, &placement, &mut self.output);
             }
             Action::MoveCursor(cursor_move) => {
                 let mv_cmd = if let crate::CursorMove::ToRelativeToWidget(x, y) = cursor_move {

@@ -2,6 +2,7 @@ use crate::Displayable;
 use crate::coordinate::Coordinate;
 use crate::widget::{Widget, WidgetHdl};
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 
 #[derive(Clone)]
 pub(crate) struct Mask {
@@ -15,9 +16,27 @@ impl Mask {
         Mask { data, width }
     }
 
+    fn new_with(width: usize, height: usize, coordinate: ComputedWidgetPlacement) -> Self {
+        let mut result = Mask::new_transparent(width, height);
+        result.add(coordinate);
+        result
+    }
+
+    fn width(&self) -> usize {
+        self.width
+    }
+
+    fn height(&self) -> usize {
+        self.data.len() / (1 + (self.width / 32))
+    }
+
     fn add(&mut self, coordinate: ComputedWidgetPlacement) {
         // Line mask is a reversed bitmask for the line, so that we can AND its complement with the data
-        let mut line_mask = vec![u32::MAX >> coordinate.x];
+        let mut line_mask = Vec::new();
+        while line_mask.len() < (coordinate.x / 32) as usize {
+            line_mask.push(0);
+        }
+        line_mask.push(u32::MAX >> coordinate.x % 32);
         while line_mask.len() <= (coordinate.width / 32) as usize {
             line_mask.push(u32::MAX);
         }
@@ -45,24 +64,50 @@ impl Mask {
             .data
             .iter_mut()
             .zip(other.data.iter())
-            .for_each(|(a, b)| *a |= *b);
+            .for_each(|(a, b)| *a &= *b);
         result
     }
 
-    pub fn at(&self, x: usize, y: usize) -> bool {
-        let line_offset = y as usize * (1 + (self.width / 32)) + x / 32;
+    fn equals(&self, other: &Mask) -> bool {
+        self.data == other.data && self.width == other.width
+    }
+
+    pub fn at<T: Copy + Into<usize>>(&self, x: T, y: T) -> bool {
+        let line_offset = y.into() as usize * (1 + (self.width / 32)) + x.into() / 32;
         let data = self.data[line_offset];
-        let bit_offset = x % 32;
+        let bit_offset = x.into() % 32;
         (data & (1 << (31 - bit_offset))) != 0
     }
 }
 
-struct MaskStack {
+impl std::fmt::Debug for Mask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let chunks = self.data.chunks(self.width / 32 + 1);
+        
+        for c in chunks {
+            for e in c {
+                write!(f, "{:032b} ", e)?;
+            }
+            write!(f, "\n")?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct MaskStack {
     unit_masks: Vec<Mask>,
     combined_masks: Vec<Mask>,
 }
 
 impl MaskStack {
+    pub fn new_empty() -> Self {
+        MaskStack {
+            unit_masks: vec![],
+            combined_masks: vec![],
+        }
+    }
+
     pub fn new(mask: Mask) -> Self {
         MaskStack {
             unit_masks: vec![mask.clone()],
@@ -72,19 +117,34 @@ impl MaskStack {
 
     pub fn push(&mut self, mask: Mask) {
         self.unit_masks.push(mask.clone());
-        self.combined_masks
-            .push(self.combined_masks.last().unwrap().combined(&mask));
+        for combined_mask in self.combined_masks.iter_mut() {
+            *combined_mask = combined_mask.combined(&mask);
+        }
+        // Combined masks are offset by 1 so that they dont hide themselves
+        self.combined_masks.push(Mask::new_transparent(mask.width, mask.height()));
     }
 
     pub fn pop(&mut self) {
         self.unit_masks.pop();
         self.combined_masks.pop();
+        self.build_combined_masks();
     }
 
     pub fn set_mask(&mut self, index: usize, mask: Mask) {
         self.unit_masks[index] = mask.clone();
-        for i in index..self.combined_masks.len() {
-            self.combined_masks[i] = self.combined_masks[i - 1].combined(&self.combined_masks[i]);
+        self.build_combined_masks();
+    }
+
+    pub fn len(&self) -> usize {
+        self.combined_masks.len()
+    }
+
+    fn build_combined_masks(&mut self) {
+        self.combined_masks = self.unit_masks.clone();
+        for i in 0..self.unit_masks.len() {
+            for j in (i + 1)..self.unit_masks.len() {
+                self.combined_masks[i] = self.combined_masks[i].combined(&self.unit_masks[j]);
+            }
         }
     }
 }
@@ -105,6 +165,7 @@ pub struct Layout {
 pub(crate) struct RenderedLayout {
     pub(crate) layers: Vec<HashMap<WidgetHdl, ComputedWidgetPlacement>>,
     pub(crate) layer_mapping: HashMap<WidgetHdl, usize>,
+    pub(crate) masks: MaskStack,
     pub(crate) current_layer: usize, //TODO: is this even used
 }
 
@@ -113,6 +174,7 @@ impl RenderedLayout {
         RenderedLayout {
             layers: vec![HashMap::new()],
             layer_mapping: HashMap::new(),
+            masks: MaskStack::new_empty(),
             current_layer: 0,
         }
     }
@@ -488,9 +550,12 @@ impl Layout {
     pub(crate) fn render(&self, size_x: i32, size_y: i32) -> RenderedLayout {
         let mut layers = Vec::new();
         let mut layer_mapping = HashMap::new();
+        let mut masks = MaskStack::new_empty();
 
         for (layer_idx, layer) in self.layers.iter().enumerate() {
             let mut rendered_layer = HashMap::new();
+            let mut current_mask = Mask::new_transparent(size_x as usize, size_y as usize);
+
             for (widget_hdl, layout_data) in layer.iter() {
                 let x = layout_data.tl.0.compute_at(size_x);
                 let y = layout_data.tl.1.compute_at(size_y);
@@ -499,24 +564,29 @@ impl Layout {
                 let width = layout_data.width.compute_at(size_x).min(max_width);
                 let height = layout_data.height.compute_at(size_y).min(max_height);
                 if width > 0 && height > 0 {
+                    let is_transparent = widget_hdl.get_data().unwrap().transparent;
+                    let placement = ComputedWidgetPlacement {
+                        x,
+                        y,
+                        width,
+                        height,
+                    };
                     layer_mapping.insert(widget_hdl.clone(), layer_idx);
-                    rendered_layer.insert(
-                        widget_hdl.clone(),
-                        ComputedWidgetPlacement {
-                            x,
-                            y,
-                            width,
-                            height,
-                        },
-                    );
+                    if !is_transparent {
+                        current_mask.add(placement);
+                    }
+                    rendered_layer.insert(widget_hdl.clone(), placement);
                 }
             }
+
+            masks.push(current_mask);
             layers.push(rendered_layer);
         }
 
         let mut r = RenderedLayout {
             layers,
             layer_mapping,
+            masks,
             current_layer: self.current_layer,
         };
 
@@ -715,6 +785,7 @@ pub(crate) mod tests {
                 f.set_outline(OutlineStyle::Double);
                 (b, f)
             };
+            // fill_widget_front.data.lock().unwrap().visible = false;
             let transparent_widget = WidgetBuilder::new(factory_widgets::text::TextBox::new(
                 "@   ",
                 Listener::empty(),
@@ -746,9 +817,12 @@ pub(crate) mod tests {
             layout.add_widget(&fill_widget_front, fill_front_placement);
             layout.add_widget(&transparent_widget, transparent_placement);
             layout.add_widget(&not_transparent_widget, not_transparent_placement);
-
+            
             // RENDERING
             let layout = layout.render(16, 8);
+            for mask_id in 0..layout.masks.len() {
+                println!("Mask {}: \n{:?}", mask_id, layout.masks[mask_id]);
+            }
             output.clear();
             layout.full_render_to_output(&mut output);
             let rendered_text = output.to_string();
@@ -822,6 +896,9 @@ pub(crate) mod tests {
             };
 
             let mut mask = Mask::new_transparent(70, 4);
+            assert_eq!(mask.width(), 70);
+            assert_eq!(mask.height(), 4);
+
             mask.add(c1);
             mask.add(c2);
 
@@ -844,6 +921,83 @@ pub(crate) mod tests {
                 0b11111111111111111111111111111111,
             ];
             assert_eq!(mask.data, expected);
+        }
+
+        #[test]
+        fn mask_stack_set() {
+            let width = 70;
+            let height = 4;
+
+            let c1 = ComputedWidgetPlacement {
+                x: 0,
+                y: 0,
+                width: 40,
+                height: 2,
+            };
+            let c2 = ComputedWidgetPlacement {
+                x: 5,
+                y: 1,
+                width: 38,
+                height: 2,
+            };
+            let c3 = ComputedWidgetPlacement {
+                x: 9,
+                y: 2,
+                width: 52,
+                height: 2,
+            };
+            let c4 = ComputedWidgetPlacement {
+                x: 1,
+                y: 1,
+                width: 15,
+                height: 3,
+            };
+
+            let mc2 = Mask::new_with(width, height, c2);
+            let mc3 = Mask::new_with(width, height, c3);
+            let mc4 = Mask::new_with(width, height, c4);
+
+            let original = {
+                let mut r = MaskStack::new(Mask::new_with(width, height, c1));
+                r.push(mc2.clone());
+                r.push(mc3.clone());
+                r
+            };
+
+            let w_c4 = {
+                let mut r = MaskStack::new(Mask::new_with(width, height, c1));
+                r.push(mc4.clone());
+                r.push(mc3.clone());
+                r
+            };
+
+            let mut modified = original.clone();
+
+            fn assert_mask_stack_equals(a: &MaskStack, b: &MaskStack) {
+                assert_eq!(a.combined_masks.len(), b.combined_masks.len());
+                for (i, mask) in a.combined_masks.iter().enumerate() {
+                    if !mask.equals(&b.combined_masks[i]) {
+                        println!(
+                            "DIFF at mask {}:\n{:?} !=\n{:?}",
+                            i, mask, b.combined_masks[i]
+                        );
+                        panic!("");
+                    }
+                    // assert!(mask.equals(&b.combined_masks[i]));
+                }
+            }
+
+            modified.set_mask(1, mc4.clone());
+            assert_mask_stack_equals(&modified, &w_c4);
+
+            modified.set_mask(1, mc2.clone());
+            assert_mask_stack_equals(&modified, &original);
+
+            modified.push(mc4.clone());
+            modified.pop();
+            modified.pop();
+            modified.push(mc3.clone());
+            assert_mask_stack_equals(&modified, &original);
         }
     }
 }

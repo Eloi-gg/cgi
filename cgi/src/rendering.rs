@@ -50,41 +50,60 @@ pub(crate) trait Output {
 
 impl crate::layout::RenderedLayout {
     pub(crate) fn full_render_to_output(&self, output: &mut dyn Output) {
-        for (widget, placement) in self.full_iter() {
-            self.render_widget_to_output(widget, placement, true, output);
+        for (layer_idx, layer) in self.layers.iter().enumerate() {
+            for (widget, placement) in layer.iter() {
+                self.render_widget_to_output(widget, placement, true, layer_idx, output);
+            }
         }
     }
 
-    pub(crate) fn render_widget_to_output(
+    /// Renders a single widget to the output, NOT including its outline.
+    pub(crate) fn render_single_widget_to_output(
+        &self,
+        widget: &crate::widget::WidgetHdl,
+        placement: &ComputedWidgetPlacement,
+        output: &mut dyn Output,
+    ) {
+        let layer = self.layer_mapping[widget];
+        self.render_widget_to_output(widget, placement, false, layer, output);
+        // TODO: single render means extra computation for transparent widgets above?
+    }
+
+    fn render_widget_to_output(
         &self,
         widget: &crate::widget::WidgetHdl,
         placement: &ComputedWidgetPlacement,
         render_outline: bool,
+        layer: usize,
         output: &mut dyn Output,
     ) {
         // Outline
         let mut outline_buffer = Vec::new();
         let has_outline = {
             let widget_data = &*widget.widget.data.lock().unwrap();
+            if widget_data.visible == false {
+                return;
+            }
             self.get_widget_outline_chars(widget_data, placement, &mut outline_buffer)
         };
+
         if render_outline {
-            for (x, y, c) in outline_buffer {
-                output.place_char(placement.x as u16 + x, placement.y as u16 + y, c);
+            for (x, y, c) in outline_buffer.iter().filter(|(x, y, _)| {
+                self.masks[layer].at(placement.x as u16 + x, placement.y as u16 + y)
+            }) {
+                output.place_char(placement.x as u16 + x, placement.y as u16 + y, *c);
             }
         }
 
+        // Shrink placement for outline
         let placement = if has_outline {
             placement.shrinked()
         } else {
             *placement
         };
-
         if placement.is_null() {
             return;
         }
-        
-        crate::log::log(&format!("{:?}", (placement.width, placement.height)));
 
         // Content
         let mut lock = widget.widget.displayable.write().unwrap();
@@ -93,7 +112,9 @@ impl crate::layout::RenderedLayout {
         if let Some(style) = style {
             style.apply();
         }
-        for (x, y, c) in changes.iter() {
+        for (x, y, c) in changes.iter().filter(|(x, y, _)| {
+            self.masks[layer].at(placement.x as u16 + x, placement.y as u16 + y)
+        }) {
             output.place_char(x + placement.x as u16, y + placement.y as u16, *c);
         }
         crate::text_formatting::CombinedFormat::reset_global();
@@ -221,7 +242,8 @@ mod rendering_tests {
 
         let widget1 = Widget::new(FillWidget::new('1'));
         let widget2 = Widget::new(FillWidget::new('2'));
-        let placement1 = WidgetPlacement::new_with_size(Absolute(1), Absolute(0), Absolute(6), Relative(0.5));
+        let placement1 =
+            WidgetPlacement::new_with_size(Absolute(1), Absolute(0), Absolute(6), Relative(0.5));
         let placement2 = WidgetPlacement::new_with_size(
             placement1.get_bottom_right().0 + 1.into(),
             Absolute(0),
@@ -247,7 +269,8 @@ mod rendering_tests {
         let widget3 = Widget::new(FillWidget::new('3'));
         let widget4 = Widget::new(FillWidget::new('4'));
 
-        let placement1 = WidgetPlacement::new_with_size(0.0, 0.0, 1.0 / 3.0, 0.5).shift_top_left(1, 0);
+        let placement1 =
+            WidgetPlacement::new_with_size(0.0, 0.0, 1.0 / 3.0, 0.5).shift_top_left(1, 0);
         let placement2 = WidgetPlacement::new_with_size(
             placement1.get_bottom_right().0,
             Absolute(0),
@@ -255,9 +278,13 @@ mod rendering_tests {
             Relative(0.5),
         )
         .expand_or_shrink(-1, 0);
-        let placement3 =
-            WidgetPlacement::new_with_size(0.0.into(), Hybrid(1, 0.5), (2.0 / 3.0).into(), 0.25.into())
-                .expand_or_shrink(-1, 0);
+        let placement3 = WidgetPlacement::new_with_size(
+            0.0.into(),
+            Hybrid(1, 0.5),
+            (2.0 / 3.0).into(),
+            0.25.into(),
+        )
+        .expand_or_shrink(-1, 0);
         let placement4 = WidgetPlacement::new_with_size(
             placement3.get_bottom_right().0,
             Hybrid(1, 0.5),
@@ -385,6 +412,8 @@ mod rendering_tests {
         output.clear();
         layout.full_render_to_output(&mut output);
         let rendered_text = output.to_string();
+
+        println!("{}", rendered_text);
         crate::test::assert_match_with_test_file(&rendered_text, "9_titles_full");
     }
 }
