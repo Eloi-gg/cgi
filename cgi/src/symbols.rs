@@ -265,7 +265,7 @@ pub mod line {
                 if !connected_at_bottom {
                     output.push((x, size.1 - 1, self.horizontal));
                 }
-            }
+            } // test
 
             for y in 1..(size.1 - 1) {
                 output.push((0, y, self.vertical));
