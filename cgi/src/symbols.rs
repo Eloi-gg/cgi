@@ -32,10 +32,10 @@ pub mod progress_bar {
         pub one_eighth: char,
         pub empty: char,
     }
-    
+
     pub mod block {
         use super::Set;
-        
+
         pub const FULL: char = '█';
         pub const SEVEN_EIGHTHS: char = '▉';
         pub const THREE_QUARTERS: char = '▊';
@@ -45,7 +45,6 @@ pub mod progress_bar {
         pub const ONE_QUARTER: char = '▎';
         pub const ONE_EIGHTH: char = '▏';
 
-    
         pub const THREE_LEVELS: Set = Set {
             full: FULL,
             seven_eighths: FULL,
@@ -92,7 +91,7 @@ pub mod progress_bar {
 
     pub mod bar {
         use super::Set;
-        
+
         pub const FULL: char = '█';
         pub const SEVEN_EIGHTHS: char = '▇';
         pub const THREE_QUARTERS: char = '▆';
@@ -101,7 +100,6 @@ pub mod progress_bar {
         pub const THREE_EIGHTHS: char = '▃';
         pub const ONE_QUARTER: char = '▂';
         pub const ONE_EIGHTH: char = '▁';
-
 
         pub const THREE_LEVELS: Set = Set {
             full: FULL,
@@ -255,9 +253,18 @@ pub mod line {
         ) {
             use widget::connections::*;
 
+            let tl_connections = (connections & (0b11 << TL_CORNER_OFFSET)) >> TL_CORNER_OFFSET;
+            let tr_connections = (connections & (0b11 << TR_CORNER_OFFSET)) >> TR_CORNER_OFFSET;
+            let bl_connections = (connections & (0b11 << BL_CORNER_OFFSET)) >> BL_CORNER_OFFSET;
+            let br_connections = (connections & (0b11 << BR_CORNER_OFFSET)) >> BR_CORNER_OFFSET;
+
+            let connected_at_bottom = bl_connections & br_connections & CONNECTED_VERTICAL > 0;
+
             for x in 1..(size.0 - 1) {
                 output.push((x, 0, self.horizontal));
-                output.push((x, size.1 - 1, self.horizontal));
+                if !connected_at_bottom {
+                    output.push((x, size.1 - 1, self.horizontal));
+                }
             }
 
             for y in 1..(size.1 - 1) {
@@ -265,7 +272,6 @@ pub mod line {
                 output.push((size.0 - 1, y, self.vertical));
             }
 
-            let tl_connections = (connections & (0b11 << TL_CORNER_OFFSET)) >> TL_CORNER_OFFSET;
             let tl_char = match tl_connections & (CONNECTED_LATERAL | CONNECTED_VERTICAL) {
                 0b11 => self.cross, // LATERAL | VERTICAL
                 CONNECTED_LATERAL => self.horizontal_down,
@@ -274,7 +280,6 @@ pub mod line {
                 _ => panic!("how does this happen"),
             };
 
-            let tr_connections = (connections & (0b11 << TR_CORNER_OFFSET)) >> TR_CORNER_OFFSET;
             let tr_char = match tr_connections & (CONNECTED_LATERAL | CONNECTED_VERTICAL) {
                 0b11 => self.cross, // LATERAL | VERTICAL
                 CONNECTED_LATERAL => self.horizontal_down,
@@ -283,7 +288,6 @@ pub mod line {
                 _ => panic!("how does this happen"),
             };
 
-            let bl_connections = (connections & (0b11 << BL_CORNER_OFFSET)) >> BL_CORNER_OFFSET;
             let bl_char = match bl_connections & (CONNECTED_LATERAL | CONNECTED_VERTICAL) {
                 0b11 => self.cross, // LATERAL | VERTICAL
                 CONNECTED_LATERAL => self.horizontal_up,
@@ -292,7 +296,6 @@ pub mod line {
                 _ => panic!("how does this happen"),
             };
 
-            let br_connections = (connections & (0b11 << BR_CORNER_OFFSET)) >> BR_CORNER_OFFSET;
             let br_char = match br_connections & (CONNECTED_LATERAL | CONNECTED_VERTICAL) {
                 0b11 => self.cross, // LATERAL | VERTICAL
                 CONNECTED_LATERAL => self.horizontal_up,
