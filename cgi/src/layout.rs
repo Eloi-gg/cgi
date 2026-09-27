@@ -450,13 +450,14 @@ impl Layout {
         self.layers[self.current_layer].insert(widget_hdl, placement);
     }
 
-    pub fn connect_and_add_widgets(
+    pub fn connect_and_add_widgets<'a, D: Displayable + 'static>(
         &mut self,
-        widgets: &mut [Widget<impl Displayable + 'static>], //TODO: intoIterator
+        widgets: impl IntoIterator<Item = &'a Widget<D>> + Clone, 
         placements: &mut [WidgetPlacement],
     ) {
         let mut locks = widgets
-            .iter_mut()
+            .clone()
+            .into_iter()
             .map(|w| w.data.lock().unwrap())
             .collect::<Vec<_>>();
         locks.iter_mut().for_each(|x| x.connected = 0);
@@ -542,7 +543,7 @@ impl Layout {
             *p = p.shift_bottom_right(r, b);
         }
 
-        for (widget, placement) in widgets.iter().zip(placements.into_iter()) {
+        for (widget, placement) in widgets.into_iter().zip(placements.into_iter()) {
             self.add_widget(widget, *placement);
         }
     }

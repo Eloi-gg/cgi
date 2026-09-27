@@ -164,7 +164,7 @@ mod modules {
             .with_title("New Messages")
             .build();
         layout.connect_and_add_widgets(
-            &mut vec![old_messages_widget, new_messages_widget],
+            &[old_messages_widget, new_messages_widget],
             &mut [old_placement, new_placement],
         );
         layout

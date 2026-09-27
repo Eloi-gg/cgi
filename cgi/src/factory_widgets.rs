@@ -1247,7 +1247,7 @@ mod factory_widgets_tests {
             widgets[i].set_outline(symbols::OutlineStyle::Normal);
         }
 
-        layout.connect_and_add_widgets(&mut widgets, placements.as_mut_slice());
+        layout.connect_and_add_widgets(&widgets, placements.as_mut_slice());
         layout.render(17, 7).full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
