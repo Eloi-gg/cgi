@@ -49,11 +49,14 @@ fn main() {
     app.add_layout(0, v_layout);
     app.add_layout(1, h_layout);
     app.spawn_debug_window().unwrap();
-
+    let mut event_handler = app.add_event_receiver();
     std::thread::spawn(move || {
         app_connection.send_command(Command::FocusWidget(tb.as_hdl()));
         for i in 0..50 {
             logger.send_message(&format!("{}", i));
+            for e in event_handler.get_events() {
+                logger.send_message(&format!("evt {:?}", e));
+            }
             tb.edit().set_text(&i.to_string()); //&format!("{}", i));
             app_connection.send_command(cgi::Command::FocusWidget(tb.as_hdl()));
             app_connection.send_action(cgi::Action::RedrawAll);

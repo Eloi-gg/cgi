@@ -15,19 +15,39 @@ use crate::{
     widget::WidgetHdl,
 };
 
-//TODO: remove pub
+pub struct EventReceiver {
+    channel: mpsc::Receiver<ct::event::Event>,
+}
+
+struct EventSender {
+    channel: mpsc::Sender<ct::event::Event>,
+}
+
+impl EventReceiver {
+    pub fn get_events(&mut self) -> impl Iterator<Item = ct::event::Event> + '_ {
+        self.channel.iter()
+    }
+}
+
+impl EventSender {
+    fn send_event(&mut self, event: ct::event::Event) {
+        self.channel.send(event);
+    }
+}
+
 pub struct Application {
-    pub layouts: HashMap<u8, Layout>,
-    pub current_layout: u8,
-    pub behavior: fn((u16, u16)) -> u8,
-    pub size: (u16, u16),
-    pub rendered_layout: RenderedLayout,
-    pub output: crate::rendering::LinuxOutput, // TODO : adaptative output (compiles differently depending on OS)
-    pub os: crate::rendering::OS,
-    pub connection_rx: mpsc::Receiver<AppMessage>,
-    pub connection_tx: mpsc::Sender<u64>,
-    pub global_action: GlobalAction,
-    pub selected_widget: Option<WidgetHdl>,
+    layouts: HashMap<u8, Layout>,
+    current_layout: u8,
+    behavior: fn((u16, u16)) -> u8,
+    size: (u16, u16),
+    rendered_layout: RenderedLayout,
+    output: crate::rendering::LinuxOutput, // TODO : adaptative output (compiles differently depending on OS)
+    os: crate::rendering::OS,
+    connection_rx: mpsc::Receiver<AppMessage>,
+    connection_tx: mpsc::Sender<u64>,
+    global_action: GlobalAction,
+    selected_widget: Option<WidgetHdl>,
+    event_sender: Option<EventSender>,
 }
 
 /// Represents a connection to the application. Can send actions and receive messages
@@ -76,6 +96,7 @@ impl Application {
                     cursor_move: None,
                 },
                 selected_widget: None,
+                event_sender: None,
             },
             AppConnection {
                 sender: action_channel_tx,
@@ -97,6 +118,16 @@ impl Application {
             for widget in &layout.layers[layout.current_layer] {
                 println!("  Widget: {:?}", widget.0.widget);
             }
+        }
+    }
+
+    pub fn add_event_receiver(&mut self) -> EventReceiver {
+        let (tx, rx) = mpsc::channel();
+        self.event_sender = Some(EventSender {
+            channel: tx,
+        });
+        EventReceiver {
+            channel: rx,
         }
     }
 
@@ -269,6 +300,9 @@ impl Application {
                         // println!("Resized to: {} cols, {} rows", new_cols, new_rows);
                     }
                     _ => {}
+                }
+                if let Some(event_sender) = &mut self.event_sender {
+                    event_sender.send_event(event.clone());
                 }
 
                 let mut actions_list = ActionList::new();
