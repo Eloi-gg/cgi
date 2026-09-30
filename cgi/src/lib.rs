@@ -18,8 +18,7 @@ pub use coordinate::Coordinate;
 pub use layout::Layout;
 pub use layout::WidgetPlacement;
 pub use widget::{Widget, WidgetBuilder};
-
-pub type KeyCode = crossterm::event::KeyCode;
+pub use crossterm::event::KeyCode;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Event {

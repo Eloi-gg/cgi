@@ -16,22 +16,22 @@ use crate::{
 };
 
 pub struct EventReceiver {
-    channel: mpsc::Receiver<ct::event::Event>,
+    channel: mpsc::Receiver<crate::Event>,
 }
 
 struct EventSender {
-    channel: mpsc::Sender<ct::event::Event>,
+    channel: mpsc::Sender<crate::Event>,
 }
 
 impl EventReceiver {
-    pub fn get_events(&mut self) -> impl Iterator<Item = ct::event::Event> + '_ {
+    pub fn get_events(&mut self) -> impl Iterator<Item = crate::Event> + '_ {
         self.channel.iter()
     }
 }
 
 impl EventSender {
     fn send_event(&mut self, event: ct::event::Event) {
-        self.channel.send(event);
+        self.channel.send(event.into());
     }
 }
 
