@@ -24,8 +24,19 @@ struct EventSender {
 }
 
 impl EventReceiver {
-    pub fn get_events(&mut self) -> impl Iterator<Item = crate::Event> + '_ {
-        self.channel.iter()
+    pub fn try_get_events(&mut self) -> impl Iterator<Item = crate::Event> + '_ {
+        self.channel.try_iter()
+    }
+
+    pub fn get_events_blocking(&mut self) -> impl Iterator<Item = crate::Event> + '_ {
+        self.channel
+            .recv()
+            .into_iter()
+            .chain(self.channel.try_iter())
+    }
+
+    pub fn recv(&mut self) -> Option<crate::Event> {
+        self.channel.recv().ok()
     }
 }
 
