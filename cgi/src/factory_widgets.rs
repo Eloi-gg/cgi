@@ -99,7 +99,7 @@ pub mod progression {
             "ProgressBar".to_string()
         }
 
-        fn get_chars(&self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
@@ -267,7 +267,7 @@ pub mod text {
         }
 
         /// Returns the difference between two layouts as a vector of offsets.
-        /// if layout_a[0] > layout_b[0], the offset is positive. so layout_b + offset = layout_a
+        /// each line is b - a. so a + diff = b. diff > 0 means b is longer than a.
         fn layout_diff(layout_a: &[u16], layout_b: &[u16]) -> Vec<i16> {
             let mut diff = Vec::new();
             for (a, b) in layout_a.iter().zip(layout_b.iter()) {
@@ -335,12 +335,11 @@ pub mod text {
                 }
             }
 
-            self.eraser.clear();
             let layout_diff = TextBox::layout_diff(&old_layout, &self.layout);
             for (line_idx, (line_diff, old_line_width)) in layout_diff.iter().zip(old_layout.iter()).enumerate() {
-                // if line_diff is positive, then the line was longer before than after the layout change. 
+                // if line_diff is negative, then the line was longer before than after the layout change. 
                 // we need to erase the characters that were there before the layout change
-                if *line_diff > 0 {
+                if *line_diff < 0 {
                     for i in 0..*line_diff {
                         //TODO: depends on the wrap type
                         self.eraser.push((*old_line_width + i as u16, line_idx as u16));
@@ -660,7 +659,7 @@ pub mod text {
             "TextBox".to_string()
         }
 
-        fn get_chars(&self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
@@ -693,7 +692,7 @@ pub mod text {
                 .into_iter()
                 .map(|((y, x), c)| (x, y, c))
                 .collect::<Vec<_>>();
-            out_vec.append(&mut self.eraser.iter().map(|(x,y)| (*x, *y, ' ')).collect::<Vec<_>>());
+            out_vec.append(&mut self.eraser.drain(..).map(|(x,y)| (x, y, ' ')).collect::<Vec<_>>());
             
             std::borrow::Cow::Owned(out_vec)
         }
@@ -722,7 +721,7 @@ pub mod text {
             "TextInput".to_string()
         }
 
-        fn get_chars(&self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
@@ -808,7 +807,7 @@ pub mod utils {
             todo!()
         }
 
-        fn get_chars(&self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             let _ = size;
             std::borrow::Cow::Owned(Vec::new())
         }

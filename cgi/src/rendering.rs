@@ -98,7 +98,7 @@ impl crate::layout::RenderedLayout {
         }
 
         // Content
-        let lock = widget.widget.displayable.read().unwrap();
+        let mut lock = widget.widget.displayable.write().unwrap();
         let style = lock.get_style();
         let chars = lock.get_chars((placement.width as u16, placement.height as u16));
         if let Some(style) = style {

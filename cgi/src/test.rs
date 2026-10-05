@@ -25,10 +25,11 @@ mod inner {
             format!("FillWidget '{}'", self.ch)
         }
 
-        fn get_chars(&self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+            let ch = self.ch;
             std::borrow::Cow::Owned(
                 (0..size.1)
-                    .flat_map(|y| (0..size.0).map(move |x| (x, y, self.ch)))
+                    .flat_map(|y| (0..size.0).map(move |x| (x, y, ch)))
                     .collect(),
             )
         }
@@ -89,7 +90,7 @@ mod inner {
             format!("Dummy {}", self.data)
         }
 
-        fn get_chars(&self, _size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&mut self, _size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             // No-op for testing
             return std::borrow::Cow::Borrowed(&[]);
         }
