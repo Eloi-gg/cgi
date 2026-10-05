@@ -134,12 +134,8 @@ impl Application {
 
     pub fn add_event_receiver(&mut self) -> EventReceiver {
         let (tx, rx) = mpsc::channel();
-        self.event_sender = Some(EventSender {
-            channel: tx,
-        });
-        EventReceiver {
-            channel: rx,
-        }
+        self.event_sender = Some(EventSender { channel: tx });
+        EventReceiver { channel: rx }
     }
 
     pub fn update(&mut self) {
@@ -155,7 +151,13 @@ impl Application {
         let next_layout = (self.behavior)((new_x, new_y));
         if next_layout != self.current_layout {
             self.current_layout = next_layout;
-            crate::log::log(format!("Layout changed from {} to {}", self.current_layout, next_layout).as_str());
+            crate::log::log(
+                format!(
+                    "Layout changed from {} to {}",
+                    self.current_layout, next_layout
+                )
+                .as_str(),
+            );
         }
         self.size = (new_x, new_y);
         self.rendered_layout =
@@ -205,11 +207,14 @@ impl Application {
         } else {
             return;
         };
-        let placement = self.rendered_layout.get_widget_coords(widget, true);
+        let placement = self.rendered_layout.get_widget_coords(widget, false);
         match action {
             Action::RedrawWidget => {
-                self.rendered_layout
-                    .render_single_widget_to_output(widget, &placement, &mut self.output);
+                self.rendered_layout.render_single_widget_to_output(
+                    widget,
+                    &placement,
+                    &mut self.output,
+                );
             }
             Action::MoveCursor(cursor_move) => {
                 let mv_cmd = if let crate::CursorMove::ToRelativeToWidget(x, y) = cursor_move {
@@ -243,7 +248,7 @@ impl Application {
     }
 
     fn handle_received_messages(&mut self) {
-        while let Some(msg) = self.connection_rx.try_recv().ok() {
+        while let Ok(msg) = self.connection_rx.try_recv() {
             crate::log::log(&format!("CGI core: received message {:?}", msg));
             match msg {
                 AppMessage::Action(action) => self.handle_widget_actions(action),
@@ -271,15 +276,17 @@ impl Application {
 
         format.apply();
         text_formatting::CombinedFormat::reset_global();
-        
     }
 
     pub fn run(mut self) {
         // Initial setup
         ct::terminal::enable_raw_mode().expect("Failed to enable raw mode");
 
-        
-        let _ = ct::execute!(std::io::stdout(), ct::terminal::EnterAlternateScreen, ct::cursor::Hide);
+        let _ = ct::execute!(
+            std::io::stdout(),
+            ct::terminal::EnterAlternateScreen,
+            ct::cursor::Hide
+        );
 
         let (cols, rows) = ct::terminal::size().unwrap();
 
@@ -294,42 +301,47 @@ impl Application {
         }
 
         // Event loop
-        for _ in 0..500 {
+        loop {
+            if let Ok(has_event) = ct::event::poll(std::time::Duration::from_secs(0)) {
+                if has_event {
+                    let event = ct::event::read().unwrap();
+                    match event {
+                        ct::event::Event::Key(key_event) => {
+                            if key_event.code == ct::event::KeyCode::Esc {
+                                return;
+                            }
+                        }
+                        ct::event::Event::Resize(new_cols, new_rows) => {
+                            self.size_changed(new_cols, new_rows);
+                            // println!("Resized to: {} cols, {} rows", new_cols, new_rows);
+                        }
+                        _ => {}
+                    }
+                    if let Some(event_sender) = &mut self.event_sender {
+                        event_sender.send_event(event.clone());
+                    }
+
+                    let mut actions_list = ActionList::new();
+                    crate::log::log(&format!("CGI core: handling event {:?}", event));
+                    for widget in
+                        self.rendered_layout.layers[self.rendered_layout.current_layer].keys()
+                    {
+                        widget
+                            .write_displayable()
+                            .unwrap()
+                            .on_event(event.clone().into(), &mut actions_list);
+                    }
+                    for action in actions_list.drain() {
+                        self.handle_widget_actions(action);
+                    }
+
+                    self.handle_global_action();
+                }
+            }
+
             self.handle_received_messages();
             self.handle_global_action();
 
-            if ct::event::poll(std::time::Duration::from_millis(100)).unwrap() {
-                let event = ct::event::read().unwrap();
-                match event {
-                    ct::event::Event::Key(key_event) => {
-                        if key_event.code == ct::event::KeyCode::Esc {
-                            return;
-                        }
-                    }
-                    ct::event::Event::Resize(new_cols, new_rows) => {
-                        self.size_changed(new_cols, new_rows);
-                        // println!("Resized to: {} cols, {} rows", new_cols, new_rows);
-                    }
-                    _ => {}
-                }
-                if let Some(event_sender) = &mut self.event_sender {
-                    event_sender.send_event(event.clone());
-                }
-
-                let mut actions_list = ActionList::new();
-                crate::log::log(&format!("CGI core: handling event {:?}", event));
-                for widget in self.rendered_layout.layers[self.rendered_layout.current_layer].keys() {
-                    widget
-                        .write_displayable()
-                        .unwrap()
-                        .on_event(event.clone().into(), &mut actions_list);
-                }
-                for action in actions_list.drain() {
-                    self.handle_widget_actions(action);
-                }
-
-                self.handle_global_action();
-            }
             std::io::stdout().flush().unwrap(); // KEEP
             // self.update();
             // print!(".");

@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::io::Write;
 use std::net::TcpStream;
+use std::sync::Mutex;
 
 pub(crate) const CONNECTION_NAME: &str = "CGI log";
 pub(crate) const CONNECTION_IP: &str = "127.0.0.1";
@@ -10,9 +11,8 @@ pub fn get_dbg_window_exe_path() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/debug/dbg_window")
 }
 
-thread_local! {
-    static LOGGER: RefCell<Option<crate::debug::dbg_window::connect::DebugConsole>> = RefCell::new(None);
-}
+static LOGGER: Mutex<Option<crate::debug::dbg_window::connect::DebugConsole>> =
+    Mutex::new(None);
 
 pub(crate) fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     let stream = crate::debug::dbg_window::connect::connect_to_server(
@@ -21,18 +21,12 @@ pub(crate) fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
         CONNECTION_PORT,
         Some(std::time::Duration::from_secs(5)),
     )?;
-    LOGGER.with(|l| {
-        *l.borrow_mut() = Some(stream);
-    });
+    *LOGGER.lock().unwrap() = Some(stream);
     Ok(())
 }
 
 pub(crate) fn log(msg: &str) {
-    LOGGER.with(|l| {
-        if let Ok(mut logger) = l.try_borrow_mut() {
-            if let Some(ref mut stream) = *logger {
-                stream.send_message(msg);
-            }
-        }
-    });
+    if let Some(ref mut stream) = *LOGGER.lock().unwrap() {
+        stream.send_message(msg);
+    } 
 }

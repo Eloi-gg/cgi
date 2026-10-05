@@ -78,7 +78,6 @@ pub mod progression {
             self.color = Some(crate::text_formatting::CombinedFormat::from(color));
             self.full_recompute();
         }
-        
 
         fn scaled_amt(&self, amt: f32) -> f32 {
             amt.clamp(0.0, 1.0) * self.size as f32
@@ -155,7 +154,10 @@ pub mod progression {
             "ProgressBar".to_string()
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_changed_chars(
+            &mut self,
+            size: (u16, u16),
+        ) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
@@ -236,7 +238,7 @@ pub mod text {
     }
 
     impl TextBox {
-        pub fn new(text: &str, listener: Listener<Self>, align: TextAlign) -> Self {
+        pub fn new(text: &str, listener: Listener<Self>, align: TextAlign) -> Self {            
             let text: Vec<char> = text.chars().collect();
             let changed_chars: BTreeSet<usize> = (0..text.len()).collect();
 
@@ -263,10 +265,34 @@ pub mod text {
             if new_text.len() > self.text.len() {
                 self.text.resize(new_text.len(), ' ');
             }
+
+            
             for (i, c) in new_text.iter().enumerate() {
                 if self.text[i] != *c {
                     self.text[i] = *c;
                     self.changed_chars.insert(i);
+
+                    // If text has a newline, everything after has changed
+                    // if *c == '\n' {
+                    //     let text_len = self.text.len();
+                    //     let next_line_break = self.line_breaks.iter().find(|&j| j > &i).unwrap_or(&text_len);
+                    //     // For the rest of the line (up to the next line break), fill with spaces
+                    //     // Now there is an offset created by the newline fill
+                    //     
+                    //     let offset = *next_line_break - i - 1;
+                    //     // self.text.resize(text_len + offset, ' ');
+                    //     self.text[(i + 1)..*next_line_break].fill(' ');
+                    //     
+                    //     for j in *next_line_break..(new_text.len() + offset) {
+                    //         self.text[j] = new_text[j - offset];
+                    //         self.changed_chars.insert(j);
+                    //     }
+                    //     for j in (new_text.len() + offset)..self.text.len() {
+                    //         self.text[j] = ' ';
+                    //         self.changed_chars.insert(j);
+                    //     }
+                    //     break;
+                    // }
                 }
             }
 
@@ -274,7 +300,8 @@ pub mod text {
             for i in new_text.len()..self.text.len() {
                 self.text[i] = ' ';
                 self.changed_chars.insert(i);
-            }
+            };
+            
             self.recompute_layout();
         }
 
@@ -485,7 +512,10 @@ pub mod text {
             self.align = align;
         }
 
-        pub fn set_style<T: Into<crate::text_formatting::CombinedFormat> + Copy>(&mut self, style: T) {
+        pub fn set_style<T: Into<crate::text_formatting::CombinedFormat> + Copy>(
+            &mut self,
+            style: T,
+        ) {
             if self.style != Some(style.into()) {
                 self.mark_every_char_dirty();
                 self.style = Some(style.into());
@@ -502,12 +532,14 @@ pub mod text {
             self
         }
 
-        pub fn with_style<T: Into<crate::text_formatting::CombinedFormat> + Copy>(mut self, style: T) -> Self {
+        pub fn with_style<T: Into<crate::text_formatting::CombinedFormat> + Copy>(
+            mut self,
+            style: T,
+        ) -> Self {
             self.set_style(style);
             self
         }
     }
-
 
     //TODO: add styles
     impl TextInput {
@@ -696,13 +728,16 @@ pub mod text {
             "TextBox".to_string()
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_changed_chars(
+            &mut self,
+            size: (u16, u16),
+        ) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
 
             const NO_WRAPPING_POINTS: u16 = 3;
-
+            
             let mut width_overflow_line_idx = Vec::new();
             let mut changes: BTreeMap<(u16, u16), char> = self
                 .changed_chars
@@ -718,7 +753,7 @@ pub mod text {
                 })
                 .map(|(x, y, c)| ((x, y), c))
                 .collect();
-
+            
             if let Wrapping::Off = self.wrapping {
                 for y in width_overflow_line_idx {
                     for i in 0..NO_WRAPPING_POINTS {
@@ -734,7 +769,7 @@ pub mod text {
                 .into_iter()
                 .map(|(pos, c)| (pos.0, pos.1, c))
                 .collect::<Vec<_>>();
-
+            
             std::borrow::Cow::Owned(out_vec)
         }
 
@@ -763,7 +798,10 @@ pub mod text {
             "TextInput".to_string()
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_changed_chars(
+            &mut self,
+            size: (u16, u16),
+        ) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
@@ -850,13 +888,15 @@ pub mod utils {
             todo!()
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_changed_chars(
+            &mut self,
+            size: (u16, u16),
+        ) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             let _ = size;
             std::borrow::Cow::Owned(Vec::new())
         }
     }
 }
-
 
 #[cfg(test)]
 mod factory_widgets_tests {
@@ -963,6 +1003,34 @@ mod factory_widgets_tests {
     }
 
     #[test]
+    fn set_text() {
+        let mut output = TestOutput::<35, 3>::new();
+        let mut text_box = WidgetBuilder::new(TextBox::new(
+            "text A ________",
+            super::Listener::empty(),
+            TextAlign::Left,
+        ))
+        .build();
+        let mut edit = text_box.edit();
+        edit.set_wrapping_mode(Wrapping::Off);
+        // edit.on_event(Event::Resize(35, 2), &mut ActionList::new());
+        let text = edit.text();
+        let s1 = "[INFO] Starting SCER Runner...\n";
+        let s2 = "[INFO] Cursor move command: 0x0c, new cursor position: (1, 0)\n[INFO] Starting SCER Runner...\n";
+        let s3 = "[INFO] Display enabled\n[INFO] Cursor move command: 0x0c, new cursor position: (1, 0)\n[INFO] Starting SCER Runner...\n";
+        edit.set_text(s1);
+        edit.set_text(s2);
+        edit.set_text(s3);
+        let placement = WidgetPlacement::fullscreen();
+        let layout = Layout::new().with_widget(&text_box, placement);
+        drop(edit);
+        layout.render(35, 3).full_render_to_output(&mut output);
+        let rendered_text = output.to_string();
+        println!("{}", rendered_text);
+        // assert_match_with_test_file(&rendered_text, "factory_widgets/centered_text");        
+    }
+    
+    #[test]
     fn centered_text() {
         let mut output = TestOutput::<25, 1>::new();
         let mut text_box = WidgetBuilder::new(TextBox::new(
@@ -1046,7 +1114,6 @@ mod factory_widgets_tests {
 
         assert_match_with_test_file(&rendered_text, "factory_widgets/right_multiline_text");
     }
-
 
     #[test]
     fn loading_bar() {

@@ -77,6 +77,7 @@ impl crate::layout::RenderedLayout {
         layer: usize,
         output: &mut dyn Output,
     ) {
+        
         // Outline
         let mut outline_buffer = Vec::new();
         let has_outline = {
@@ -112,6 +113,7 @@ impl crate::layout::RenderedLayout {
         if let Some(style) = style {
             style.apply();
         }
+        
         for (x, y, c) in changes.iter().filter(|(x, y, _)| {
             self.masks[layer].at(placement.x as u16 + x, placement.y as u16 + y)
         }) {

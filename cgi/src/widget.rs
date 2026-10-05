@@ -138,6 +138,7 @@ impl std::fmt::Debug for Widget<dyn Displayable> {
     }
 }
 
+
 pub struct WidgetBuilder<T: Displayable + 'static> {
     displayable: T,
     visible: bool,
