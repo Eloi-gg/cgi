@@ -99,10 +99,7 @@ pub mod progression {
             "ProgressBar".to_string()
         }
 
-        fn get_chars(
-            &self,
-            size: (u16, u16),
-        ) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
@@ -169,7 +166,8 @@ pub mod text {
         text: Vec<char>,
         layout: Vec<u16>,
         line_breaks: Vec<usize>,
-        size: (u16, u16),               // Remove ?
+        eraser: Vec<(u16, u16)>,
+        size: (u16, u16), // Remove ?
         current_length: usize,
         listener: Listener<Self>,
         align: TextAlign,
@@ -190,6 +188,7 @@ pub mod text {
             let text: Vec<char> = text.chars().collect();
 
             Self {
+                eraser: vec![],
                 current_length: text.len(),
                 text,
                 size: (0, 0),
@@ -212,19 +211,12 @@ pub mod text {
                 self.text.resize(new_text.len(), ' ');
             }
 
-            
             for (i, c) in new_text.iter().enumerate() {
-                if self.text[i] != *c {
-                    self.text[i] = *c;
-
-                }
+                self.text[i] = *c;
             }
 
             self.current_length = new_text.len();
-            for i in new_text.len()..self.text.len() {
-                self.text[i] = ' ';
-            };
-            
+
             self.recompute_layout();
         }
 
@@ -274,8 +266,18 @@ pub mod text {
             self.recompute_layout();
         }
 
+        /// Returns the difference between two layouts as a vector of offsets.
+        /// if layout_a[0] > layout_b[0], the offset is positive. so layout_b + offset = layout_a
+        fn layout_diff(layout_a: &[u16], layout_b: &[u16]) -> Vec<i16> {
+            let mut diff = Vec::new();
+            for (a, b) in layout_a.iter().zip(layout_b.iter()) {
+                diff.push(*b as i16 - *a as i16);
+            }
+            diff
+        }
+
         fn recompute_layout(&mut self) {
-            self.layout.clear();
+            let old_layout = self.layout.drain(..).collect::<Vec<u16>>();
 
             let mut line_width = 0;
 
@@ -332,6 +334,20 @@ pub mod text {
                     }
                 }
             }
+
+            self.eraser.clear();
+            let layout_diff = TextBox::layout_diff(&old_layout, &self.layout);
+            for (line_idx, (line_diff, old_line_width)) in layout_diff.iter().zip(old_layout.iter()).enumerate() {
+                // if line_diff is positive, then the line was longer before than after the layout change. 
+                // we need to erase the characters that were there before the layout change
+                if *line_diff > 0 {
+                    for i in 0..*line_diff {
+                        //TODO: depends on the wrap type
+                        self.eraser.push((*old_line_width + i as u16, line_idx as u16));
+                    }
+                }
+            }
+            
         }
 
         // TODO: every call to this function is quite expensive, precompute all text stuff before calling the function many times
@@ -644,16 +660,13 @@ pub mod text {
             "TextBox".to_string()
         }
 
-        fn get_chars(
-            &self,
-            size: (u16, u16),
-        ) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
 
             const NO_WRAPPING_POINTS: u16 = 3;
-            
+
             let mut width_overflow_line_idx = Vec::new();
             let mut chars: BTreeMap<(u16, u16), char> = (0..self.text.len())
                 .filter_map(|i| self.get_char_placement(i))
@@ -667,7 +680,7 @@ pub mod text {
                 })
                 .map(|(x, y, c)| ((y, x), c))
                 .collect();
-            
+
             if let Wrapping::Off = self.wrapping {
                 for y in width_overflow_line_idx {
                     for i in 0..NO_WRAPPING_POINTS.min(size.0) {
@@ -676,10 +689,11 @@ pub mod text {
                 }
             }
 
-            let out_vec = chars
+            let mut out_vec = chars
                 .into_iter()
                 .map(|((y, x), c)| (x, y, c))
                 .collect::<Vec<_>>();
+            out_vec.append(&mut self.eraser.iter().map(|(x,y)| (*x, *y, ' ')).collect::<Vec<_>>());
             
             std::borrow::Cow::Owned(out_vec)
         }
@@ -708,10 +722,7 @@ pub mod text {
             "TextInput".to_string()
         }
 
-        fn get_chars(
-            &self,
-            size: (u16, u16),
-        ) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
@@ -797,10 +808,7 @@ pub mod utils {
             todo!()
         }
 
-        fn get_chars(
-            &self,
-            size: (u16, u16),
-        ) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             let _ = size;
             std::borrow::Cow::Owned(Vec::new())
         }
@@ -948,9 +956,9 @@ mod factory_widgets_tests {
         layout.render(35, 3).full_render_to_output(&mut output);
         let rendered_text = output.to_string();
         println!("{}", rendered_text);
-        // assert_match_with_test_file(&rendered_text, "factory_widgets/centered_text");        
+        // assert_match_with_test_file(&rendered_text, "factory_widgets/centered_text");
     }
-    
+
     #[test]
     fn centered_text() {
         let mut output = TestOutput::<25, 1>::new();
