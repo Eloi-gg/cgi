@@ -141,7 +141,7 @@ pub mod progression {
 }
 
 pub mod text {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashSet};
 
     use crate::CursorMove;
 
@@ -172,6 +172,7 @@ pub mod text {
         listener: Listener<Self>,
         align: TextAlign,
         wrapping: Wrapping,
+        multiple_updates: bool,
         style: Option<crate::text_formatting::CombinedFormat>,
     }
 
@@ -194,6 +195,7 @@ pub mod text {
                 size: (0, 0),
                 listener,
                 align,
+                multiple_updates: false,
                 layout: vec![0; 1], // Initialize with a single line
                 line_breaks: vec![0],
                 wrapping: Wrapping::PerLetter,
@@ -206,6 +208,7 @@ pub mod text {
         }
 
         pub fn set_text(&mut self, text: &str) {
+            self.multiple_updates = !self.eraser.is_empty();
             let new_text: Vec<char> = text.chars().collect();
             if new_text.len() > self.text.len() {
                 self.text.resize(new_text.len(), ' ');
@@ -268,26 +271,44 @@ pub mod text {
 
         /// Returns the difference between two layouts as a vector of offsets.
         /// each line is b - a. so a + diff = b. diff > 0 means b is longer than a.
-        fn layout_diff(layout_a: &[u16], layout_b: &[u16]) -> Vec<i16> {
+        /// The result is as long as the longer of the two layouts.
+        fn layout_diff(&self, layout_a: &[u16], layout_b: &[u16]) -> Vec<i16> {
             let mut diff = Vec::new();
-            for (a, b) in layout_a.iter().zip(layout_b.iter()) {
-                diff.push(*b as i16 - *a as i16);
+
+            let max_len = layout_a.len().max(layout_b.len());
+
+            for i in 0..max_len {
+                let a = layout_a
+                    .get(i)
+                    .map(|x| (*x).min(self.size.0) as i16)
+                    .unwrap_or(0);
+                let b = layout_b
+                    .get(i)
+                    .map(|x| (*x).min(self.size.0) as i16)
+                    .unwrap_or(0);
+                diff.push(b - a);
             }
+
             diff
         }
 
         fn recompute_layout(&mut self) {
             let old_layout = self.layout.drain(..).collect::<Vec<u16>>();
+            let dim = self.style.as_ref().map(|s| s.is_dim()).unwrap_or(false);
 
             let mut line_width = 0;
 
             self.line_breaks = self
                 .text
                 .iter()
+                .take(self.current_length)
                 .enumerate()
                 .filter_map(|(i, c)| if *c == '\n' { Some(i) } else { None })
                 .collect();
 
+            if dim {
+                crate::log::log(&format!("{}", self.text()));
+            }
             match self.wrapping {
                 Wrapping::Off => {
                     if self.size.0 == 0 {
@@ -305,7 +326,7 @@ pub mod text {
                     }
 
                     let remaining = self.current_length.saturating_sub(start);
-                    if !layout.is_empty() || remaining > 0 {
+                    if layout.is_empty() || remaining > 0 {
                         layout.push(remaining as u16);
                     }
 
@@ -335,7 +356,7 @@ pub mod text {
                 }
             }
 
-            let layout_diff = TextBox::layout_diff(&old_layout, &self.layout);
+            let layout_diff = self.layout_diff(&old_layout, &self.layout);
             for (line_idx, (line_diff, old_line_width)) in
                 layout_diff.iter().zip(old_layout.iter()).enumerate()
             {
@@ -343,10 +364,16 @@ pub mod text {
                 // we need to erase the characters that were there before the layout change
                 if *line_diff < 0 {
                     let line_diff: u16 = (-line_diff) as u16;
+                    let old_line_width: u16 = (*old_line_width).min(self.size.0);
+                    if dim {
+                        crate::log::log(&format!(
+                            "line_diff: {} old_line_width: {}",
+                            line_diff, old_line_width
+                        ));
+                    }
                     for i in 0..line_diff {
                         //TODO: depends on the wrap type
-                        self.eraser
-                            .push((*old_line_width - i - 1, line_idx as u16));
+                        self.eraser.push((old_line_width - i - 1, line_idx as u16));
                     }
                 }
             }
@@ -357,7 +384,7 @@ pub mod text {
             if index >= self.text.len() || self.text[index] == '\n' {
                 return None;
             }
-            
+
             let visual_index = self.text[..index].iter().filter(|&&c| c != '\n').count() as u16;
             let mut line_start = 0;
             let character = self
@@ -661,6 +688,7 @@ pub mod text {
         }
 
         fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+            self.size = size;
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
@@ -689,24 +717,35 @@ pub mod text {
             //     }
             // }
 
-            if self.eraser.len() > 0 {
-                crate::log::log(&format!("ERASER: {:?}", &self.eraser));
-            }
+            // To check if we are not erasing what we plan on rendering
 
-            chars.append(
-                &mut self
-                    .eraser
+            let mut eraser = if self.multiple_updates {
+                let lookup = chars
+                    .iter()
+                    .map(|(x, y, _)| ((*x as u32) << 16) | *y as u32)
+                    .collect::<HashSet<_>>();
+                self.eraser
+                    .drain(..)
+                    .filter(|(x, y)| {
+                        let key = ((*x as u32) << 16) | *y as u32;
+                        !lookup.contains(&key)
+                    })
+                    .map(|(x, y)| (x, y, ' '))
+                    .collect::<Vec<_>>()
+            } else {
+                self.eraser
                     .drain(..)
                     .map(|(x, y)| (x, y, ' '))
-                    .collect::<Vec<_>>(),
-            );
+                    .collect::<Vec<_>>()
+            };
+            
+            chars.append(&mut eraser);
 
             std::borrow::Cow::Owned(chars)
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
-            if let crate::Event::Resize(w, h) = event {
-                self.size = (w, h);
+            if let crate::Event::Resize(..) = event {
                 self.recompute_layout();
             }
             if self.listener.is_listening_for(event.into()) {
@@ -732,15 +771,14 @@ pub mod text {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
-
+            self.text_box.size = size;
             self.text_box.get_chars(size)
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
             let mut should_update = false;
 
-            if let crate::Event::Resize(w, h) = event {
-                self.text_box.size = (w, h);
+            if let crate::Event::Resize(..) = event {
                 self.text_box.recompute_layout();
                 should_update = true;
             }
@@ -939,77 +977,157 @@ mod factory_widgets_tests {
 
     #[test]
     fn set_text() {
-        let mut output = TestOutput::<35, 3>::new();
+        let size = (35, 4);
+        let mut output = TestOutput::<35, 4>::new();
         let mut text_box = WidgetBuilder::new(TextBox::new(
-            "ABC\nDEF",
+            "rrrrrrrrrrrrrrrrrrrrrrrrr",
             super::Listener::empty(),
             TextAlign::Left,
         ))
         .build();
+
         let mut edit = text_box.edit();
         edit.set_wrapping_mode(Wrapping::Off);
         edit.on_event(Event::Resize(35, 2), &mut ActionList::new());
-        let s1 = "AB\nCDEF";
-        edit.set_text(s1);
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
-        let chars = edit.get_chars((35, 3)).to_vec();
-        assert_eq!(chars, vec![
-            (0, 0, 'A'),
-            (1, 0, 'B'),
-            (0, 1, 'C'),
-            (1, 1, 'D'),
-            (2, 1, 'E'),
-            (3, 1, 'F'),
-            (2, 0, ' '),
-        ]);
-        edit.set_text("ABCX123\nDEF");
-        let chars = edit.get_chars((35, 3)).to_vec();
-        assert_eq!(chars, vec![
-            (0, 0, 'A'),
-            (1, 0, 'B'),
-            (2, 0, 'C'),
-            (3, 0, 'X'),
-            (4, 0, '1'),
-            (5, 0, '2'),
-            (6, 0, '3'),
-            (0, 1, 'D'),
-            (1, 1, 'E'),
-            (2, 1, 'F'),
-            (3, 1, ' '),
-        ]);
+
+        // technically nothing changed sinc the widget has not been rendered yet
+        let chars = edit.get_chars(size).to_vec();
+        edit.set_text("ABC\nDEF");
+        let chars = edit.get_chars(size).to_vec();
+        assert_eq!(
+            chars,
+            vec![
+                (0, 0, 'A'),
+                (1, 0, 'B'),
+                (2, 0, 'C'),
+                (0, 1, 'D'),
+                (1, 1, 'E'),
+                (2, 1, 'F'),
+            ]
+        );
+
+        let s1 = "AB\nCDEF";
         edit.set_text(s1);
-        let chars = edit.get_chars((35, 3)).to_vec();
-        assert_eq!(chars, vec![
-            (0, 0, 'A'),
-            (1, 0, 'B'),
-            (0, 1, 'C'),
-            (1, 1, 'D'),
-            (2, 1, 'E'),
-            (3, 1, 'F'),
-            (6, 0, ' '),
-            (5, 0, ' '),
-            (4, 0, ' '),
-            (3, 0, ' '),
-            (2, 0, ' '),
-        ]);
+        let chars = edit.get_chars(size).to_vec();
+        assert_eq!(
+            chars,
+            vec![
+                (0, 0, 'A'),
+                (1, 0, 'B'),
+                (0, 1, 'C'),
+                (1, 1, 'D'),
+                (2, 1, 'E'),
+                (3, 1, 'F'),
+                (2, 0, ' '),
+            ]
+        );
+        edit.set_text("ABCX123\nDEF");
+        let chars = edit.get_chars(size).to_vec();
+        assert_eq!(
+            chars,
+            vec![
+                (0, 0, 'A'),
+                (1, 0, 'B'),
+                (2, 0, 'C'),
+                (3, 0, 'X'),
+                (4, 0, '1'),
+                (5, 0, '2'),
+                (6, 0, '3'),
+                (0, 1, 'D'),
+                (1, 1, 'E'),
+                (2, 1, 'F'),
+                (3, 1, ' '),
+            ]
+        );
+        edit.set_text(s1);
+        let chars = edit.get_chars(size).to_vec();
+        assert_eq!(
+            chars,
+            vec![
+                (0, 0, 'A'),
+                (1, 0, 'B'),
+                (0, 1, 'C'),
+                (1, 1, 'D'),
+                (2, 1, 'E'),
+                (3, 1, 'F'),
+                (6, 0, ' '),
+                (5, 0, ' '),
+                (4, 0, ' '),
+                (3, 0, ' '),
+                (2, 0, ' '),
+            ]
+        );
         edit.set_text(&("\n".to_owned() + s1));
-        let chars = edit.get_chars((35, 3)).to_vec();
-        assert_eq!(chars, vec![
-            (0, 1, 'A'),
-            (1, 1, 'B'),
-            (0, 2, 'C'),
-            (1, 2, 'D'),
-            (2, 2, 'E'),
-            (3, 2, 'F'),
-            (1, 0, ' '),
-            (0, 0, ' '),
-            (3, 1, ' '),
-            (2, 1, ' '),
-        ]);
+        let chars = edit.get_chars(size).to_vec();
+        assert_eq!(
+            chars,
+            vec![
+                (0, 1, 'A'),
+                (1, 1, 'B'),
+                (0, 2, 'C'),
+                (1, 2, 'D'),
+                (2, 2, 'E'),
+                (3, 2, 'F'),
+                (1, 0, ' '),
+                (0, 0, ' '),
+                (3, 1, ' '),
+                (2, 1, ' '),
+            ]
+        );
+        edit.set_text("");
+
+        let chars = edit.get_chars(size).to_vec();
+        assert_eq!(
+            chars,
+            vec![
+                (1, 1, ' '),
+                (0, 1, ' '),
+                (3, 2, ' '),
+                (2, 2, ' '),
+                (1, 2, ' '),
+                (0, 2, ' '),
+            ]
+        );
+        let mut ms = "aaaa".to_owned();
+        edit.set_text(&ms);
+        ms = "bb\n".to_owned() + &ms;
+        edit.set_text(&ms);
+        ms = "cccc\n".to_owned() + &ms;
+        edit.set_text(&ms);
+        ms = "dd\n".to_owned() + &ms;
+        edit.set_text(&ms);
+        let mut chars = edit.get_chars(size).to_vec();
+        chars.sort();
+        chars.dedup();
         
+        assert_eq!(
+            chars,
+            vec![
+                (0, 0, 'd'),
+                (0, 1, 'c'),
+                (0, 2, 'b'),
+                (0, 3, 'a'),
+                (1, 0, 'd'),
+                (1, 1, 'c'),
+                (1, 2, 'b'),
+                (1, 3, 'a'),
+                (2, 0, ' '),
+                (2, 1, 'c'),
+                (2, 2, ' '),
+                (2, 3, 'a'),
+                (3, 0, ' '),
+                (3, 1, 'c'),
+                (3, 2, ' '),
+                (3, 3, 'a'),
+            ]);
+        
+
         drop(edit);
-        layout.render(35, 3).full_render_to_output(&mut output);
+        layout
+            .render(size.0 as i32, size.1 as i32)
+            .full_render_to_output(&mut output);
         let rendered_text = output.to_string();
         println!("{}", rendered_text);
         // assert_match_with_test_file(&rendered_text, "factory_widgets/centered_text");

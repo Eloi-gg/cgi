@@ -134,6 +134,22 @@ impl From<Format> for CombinedFormat {
 }
 
 impl CombinedFormat {
+    pub fn is_italic(&self) -> bool {
+        self.italic == 1
+    }
+    
+    pub fn is_bold(&self) -> bool {
+        self.bold == 1
+    }
+
+    pub fn is_dim(&self) -> bool {
+        self.dim == 1
+    }
+
+    pub fn is_underline(&self) -> bool {
+        self.underline == 1
+    }
+    
     pub(crate) fn reset_global() {
         let _ = execute!(
             std::io::stdout(),
