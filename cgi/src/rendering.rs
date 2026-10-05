@@ -36,18 +36,6 @@ pub(crate) trait Output {
     fn place_char(&mut self, x: u16, y: u16, ch: char);
 }
 
-// fn render_widget(
-//     widget: &dyn super::Displayable, //
-//     size: crate::layout::ComputedWidgetPlacement,
-//     output: &mut dyn Output,
-// ) {
-//     let mut changed_chars = Vec::new();
-//     widget.get_changed_chars((size.width as u16, size.height as u16), &mut changed_chars);
-//     for (x, y, ch) in changed_chars {
-//         output.place_char(size.x as u16 + x, size.y as u16 + y, ch);
-//     }
-// }
-
 impl crate::layout::RenderedLayout {
     pub(crate) fn full_render_to_output(&self, output: &mut dyn Output) {
         for (layer_idx, layer) in self.layers.iter().enumerate() {
@@ -80,12 +68,15 @@ impl crate::layout::RenderedLayout {
         
         // Outline
         let mut outline_buffer = Vec::new();
-        let has_outline = {
+        let (has_outline, is_transparent) = {
             let widget_data = &*widget.widget.data.lock().unwrap();
             if widget_data.visible == false {
                 return;
             }
-            self.get_widget_outline_chars(widget_data, placement, &mut outline_buffer)
+            (
+                self.get_widget_outline_chars(widget_data, placement, &mut outline_buffer),
+                widget_data.transparent,
+            )
         };
 
         if render_outline {
@@ -107,15 +98,16 @@ impl crate::layout::RenderedLayout {
         }
 
         // Content
-        let mut lock = widget.widget.displayable.write().unwrap();
+        let lock = widget.widget.displayable.read().unwrap();
         let style = lock.get_style();
-        let changes = lock.get_changed_chars((placement.width as u16, placement.height as u16));
+        let chars = lock.get_chars((placement.width as u16, placement.height as u16));
         if let Some(style) = style {
             style.apply();
         }
         
-        for (x, y, c) in changes.iter().filter(|(x, y, _)| {
+        for (x, y, c) in chars.iter().filter(|(x, y, c)| {
             self.masks[layer].at(placement.x as u16 + x, placement.y as u16 + y)
+                && !(is_transparent && *c == ' ')
         }) {
             output.place_char(x + placement.x as u16, y + placement.y as u16, *c);
         }

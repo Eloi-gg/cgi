@@ -9,18 +9,18 @@ const CONNECTION_PORT: u16 = 4000;
 fn main() {
     use cgi::factory_widgets::{Listener, progression::*, text::*};
 
-    cgi::debug::dbg_window::create::spawn_server(
-        cgi::log::get_dbg_window_exe_path().to_str().unwrap(),
-        CONNECTION_IP,
-        CONNECTION_PORT,
-    );
-    let mut logger = cgi::debug::dbg_window::connect::connect_to_server(
-        CONNECTION_NAME,
-        CONNECTION_IP,
-        CONNECTION_PORT,
-        Some(std::time::Duration::from_secs(5)),
-    ).unwrap();
-    logger.send_message("APP CONNECTED");
+    // cgi::debug::dbg_window::create::spawn_server(
+    //     cgi::log::get_dbg_window_exe_path().to_str().unwrap(),
+    //     CONNECTION_IP,
+    //     CONNECTION_PORT,
+    // );
+    // let mut logger = cgi::debug::dbg_window::connect::connect_to_server(
+    //     CONNECTION_NAME,
+    //     CONNECTION_IP,
+    //     CONNECTION_PORT,
+    //     Some(std::time::Duration::from_secs(5)),
+    // ).unwrap();
+    // logger.send_message("APP CONNECTED");
     let (mut app, app_connection) = cgi::Application::new();
 
     let tb = WidgetBuilder::new(TextBox::default())
@@ -48,15 +48,15 @@ fn main() {
     app.set_layout_behaviour(|(x, y)| (x > 2 * y) as u8);
     app.add_layout(0, v_layout);
     app.add_layout(1, h_layout);
-    app.spawn_debug_window().unwrap();
+    // app.spawn_debug_window().unwrap();
     let mut event_handler = app.add_event_receiver();
     std::thread::spawn(move || {
         app_connection.send_command(Command::FocusWidget(tb.as_hdl()));
         for i in 0..50 {
-            logger.send_message(&format!("{}", i));
-            for e in event_handler.get_events() {
-                logger.send_message(&format!("evt {:?}", e));
-            }
+            // logger.send_message(&format!("{}", i));
+            // for e in event_handler.get_events_blocking() {
+            //     logger.send_message(&format!("evt {:?}", e));
+            // }
             tb.edit().set_text(&i.to_string()); //&format!("{}", i));
             app_connection.send_command(cgi::Command::FocusWidget(tb.as_hdl()));
             app_connection.send_action(cgi::Action::RedrawAll);

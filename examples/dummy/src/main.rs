@@ -15,7 +15,7 @@ impl Displayable for CustomWidget {
         format!("CustomWidget {}", self.data)
     }
 
-    fn get_changed_chars(&mut self, _size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+    fn get_chars(&self, _size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
         std::borrow::Cow::Borrowed(&[])
     }
 

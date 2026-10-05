@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use crate::{Displayable, EventType};
 
 #[derive(Clone)]
@@ -48,10 +46,7 @@ pub mod progression {
 
     pub struct ProgressBar {
         bar_type: ProgressBarType,
-        changed_chars: Vec<(u16, u16, char)>,
-        current_num_chars: usize,
         amt: f32,
-        size: u16,
         listener: Listener<Self>,
         color: Option<crate::text_formatting::CombinedFormat>,
     }
@@ -60,10 +55,7 @@ pub mod progression {
         pub fn new(bar_type: ProgressBarType, amt: f32, listener: Listener<Self>) -> Self {
             Self {
                 bar_type,
-                changed_chars: Vec::new(),
-                current_num_chars: 0,
                 amt,
-                size: 0,
                 listener,
                 color: None,
             }
@@ -71,16 +63,14 @@ pub mod progression {
 
         pub fn set_amt(&mut self, amt: f32) {
             self.amt = amt;
-            self.compute_changed_chars();
         }
 
         pub fn set_color(&mut self, color: crate::text_formatting::Format) {
             self.color = Some(crate::text_formatting::CombinedFormat::from(color));
-            self.full_recompute();
         }
 
-        fn scaled_amt(&self, amt: f32) -> f32 {
-            amt.clamp(0.0, 1.0) * self.size as f32
+        fn scaled_amt(&self, amt: f32, size: u16) -> f32 {
+            amt.clamp(0.0, 1.0) * size as f32
         }
 
         fn get_set(&self) -> crate::symbols::progress_bar::Set {
@@ -90,51 +80,6 @@ pub mod progression {
                 ProgressBarType::VerticalNineLevels => bar::NINE_LEVELS,
                 ProgressBarType::VerticalThreeLevels => bar::THREE_LEVELS,
             }
-        }
-
-        fn compute_changed_chars(&mut self) {
-            let scaled = self.scaled_amt(self.amt);
-
-            let new_num_chars = scaled.ceil() as usize;
-            let filled = scaled.floor() as usize;
-            let partial_fill = scaled.fract();
-
-            let range = if new_num_chars < self.current_num_chars {
-                new_num_chars..(self.current_num_chars + 1)
-            } else {
-                self.current_num_chars..(new_num_chars + 1)
-            };
-
-            self.changed_chars.clear();
-            self.current_num_chars = new_num_chars;
-
-            let set = self.get_set();
-
-            for i in range {
-                let ch = if i < filled {
-                    set.full
-                } else if i == filled && partial_fill > 0.0 {
-                    set.get_level(partial_fill)
-                } else {
-                    ' '
-                };
-
-                // Avoid producing coordinates outside the current sized axis
-                if (i as u16) >= self.size {
-                    continue;
-                }
-
-                if self.is_horizontal() {
-                    self.changed_chars.push((i as u16, 0, ch));
-                } else {
-                    self.changed_chars.push((0, i as u16, ch));
-                }
-            }
-        }
-
-        fn full_recompute(&mut self) {
-            self.current_num_chars = 0;
-            self.compute_changed_chars();
         }
 
         fn is_horizontal(&self) -> bool {
@@ -147,42 +92,46 @@ pub mod progression {
 
     impl Displayable for ProgressBar {
         fn display(&self) {
-            // No-op: rendering is handled via get_changed_chars.
+            // Rendering is handled by `get_chars` during the layout pass.
         }
 
         fn name(&self) -> String {
             "ProgressBar".to_string()
         }
 
-        fn get_changed_chars(
-            &mut self,
+        fn get_chars(
+            &self,
             size: (u16, u16),
         ) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
 
-            // Update internal size based on requested widget size and recompute the bar characters.
             let axis_len = if self.is_horizontal() { size.0 } else { size.1 };
-            if self.size != axis_len {
-                self.size = axis_len;
-            }
-            // Recompute characters from current amt and size.
-            self.full_recompute();
-
-            std::borrow::Cow::Borrowed(&self.changed_chars)
+            let scaled = self.scaled_amt(self.amt, axis_len);
+            let filled = scaled.floor() as usize;
+            let partial_fill = scaled.fract();
+            let set = self.get_set();
+            let chars = (0..axis_len)
+                .map(|i| {
+                    let ch = if (i as usize) < filled {
+                        set.full
+                    } else if (i as usize) == filled && partial_fill > 0.0 {
+                        set.get_level(partial_fill)
+                    } else {
+                        ' '
+                    };
+                    if self.is_horizontal() {
+                        (i, 0, ch)
+                    } else {
+                        (0, i, ch)
+                    }
+                })
+                .collect();
+            std::borrow::Cow::Owned(chars)
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
-            if let crate::Event::Resize(w, h) = event {
-                let axis_len = match self.bar_type {
-                    ProgressBarType::HorizontalNineLevels => w,
-                    ProgressBarType::HorizontalThreeLevels => w,
-                    ProgressBarType::VerticalNineLevels => h,
-                    ProgressBarType::VerticalThreeLevels => h,
-                };
-                self.size = axis_len;
-            }
             if self.listener.is_listening_for(event.into()) {
                 (self.listener.on_event)(event, actions, self);
             }
@@ -195,7 +144,7 @@ pub mod progression {
 }
 
 pub mod text {
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::BTreeMap;
 
     use crate::CursorMove;
 
@@ -220,7 +169,6 @@ pub mod text {
         text: Vec<char>,
         layout: Vec<u16>,
         line_breaks: Vec<usize>,
-        changed_chars: BTreeSet<usize>, // points to chars in the text
         size: (u16, u16),               // Remove ?
         current_length: usize,
         listener: Listener<Self>,
@@ -238,14 +186,12 @@ pub mod text {
     }
 
     impl TextBox {
-        pub fn new(text: &str, listener: Listener<Self>, align: TextAlign) -> Self {            
+        pub fn new(text: &str, listener: Listener<Self>, align: TextAlign) -> Self {
             let text: Vec<char> = text.chars().collect();
-            let changed_chars: BTreeSet<usize> = (0..text.len()).collect();
 
             Self {
                 current_length: text.len(),
                 text,
-                changed_chars,
                 size: (0, 0),
                 listener,
                 align,
@@ -257,7 +203,7 @@ pub mod text {
         }
 
         pub fn text(&self) -> String {
-            self.text.iter().collect()
+            self.text[..self.current_length].iter().collect()
         }
 
         pub fn set_text(&mut self, text: &str) {
@@ -270,44 +216,21 @@ pub mod text {
             for (i, c) in new_text.iter().enumerate() {
                 if self.text[i] != *c {
                     self.text[i] = *c;
-                    self.changed_chars.insert(i);
 
-                    // If text has a newline, everything after has changed
-                    // if *c == '\n' {
-                    //     let text_len = self.text.len();
-                    //     let next_line_break = self.line_breaks.iter().find(|&j| j > &i).unwrap_or(&text_len);
-                    //     // For the rest of the line (up to the next line break), fill with spaces
-                    //     // Now there is an offset created by the newline fill
-                    //     
-                    //     let offset = *next_line_break - i - 1;
-                    //     // self.text.resize(text_len + offset, ' ');
-                    //     self.text[(i + 1)..*next_line_break].fill(' ');
-                    //     
-                    //     for j in *next_line_break..(new_text.len() + offset) {
-                    //         self.text[j] = new_text[j - offset];
-                    //         self.changed_chars.insert(j);
-                    //     }
-                    //     for j in (new_text.len() + offset)..self.text.len() {
-                    //         self.text[j] = ' ';
-                    //         self.changed_chars.insert(j);
-                    //     }
-                    //     break;
-                    // }
                 }
             }
 
             self.current_length = new_text.len();
             for i in new_text.len()..self.text.len() {
                 self.text[i] = ' ';
-                self.changed_chars.insert(i);
             };
             
             self.recompute_layout();
         }
 
         pub fn append_text(&mut self, text: &str) {
+            let added_len = text.chars().count();
             for (i, c) in text.chars().enumerate() {
-                self.changed_chars.insert(self.current_length + i);
                 if self.current_length + i >= self.text.len() {
                     self.text.push(c);
                 } else {
@@ -316,7 +239,7 @@ pub mod text {
             }
 
             self.recompute_layout_from(self.current_length);
-            self.current_length += text.len();
+            self.current_length += added_len;
         }
 
         pub fn append_char(&mut self, c: char) {
@@ -325,7 +248,6 @@ pub mod text {
             } else {
                 self.text[self.current_length] = c;
             }
-            self.changed_chars.insert(self.current_length);
             self.recompute_layout_from(self.current_length);
             self.current_length += 1;
         }
@@ -336,7 +258,6 @@ pub mod text {
             }
             for i in start..end {
                 self.text[i] = ' ';
-                self.changed_chars.insert(i);
                 self.recompute_layout_from(start);
             }
             if end == self.current_length {
@@ -351,12 +272,6 @@ pub mod text {
         //TODO : implement
         fn recompute_layout_from(&mut self, _start: usize) {
             self.recompute_layout();
-        }
-
-        fn mark_every_char_dirty(&mut self) {
-            for i in 0..self.text.len() {
-                self.changed_chars.insert(i);
-            }
         }
 
         fn recompute_layout(&mut self) {
@@ -517,7 +432,6 @@ pub mod text {
             style: T,
         ) {
             if self.style != Some(style.into()) {
-                self.mark_every_char_dirty();
                 self.style = Some(style.into());
             }
         }
@@ -591,7 +505,6 @@ pub mod text {
 
             self.text_box.text.insert(self.cursor, ch);
             self.text_box.current_length += 1;
-            self.text_box.changed_chars = (0..self.text_box.current_length).collect();
             self.text_box.recompute_layout();
             self.cursor += 1;
         }
@@ -601,9 +514,11 @@ pub mod text {
                 return;
             }
 
+            let previous_storage_len = self.text_box.text.len();
+            let new_length = self.text_box.current_length - (end - start);
             self.text_box.text.drain(start..end);
-            self.text_box.current_length = self.text_box.text.len();
-            self.text_box.changed_chars = (0..self.text_box.current_length).collect();
+            self.text_box.current_length = new_length;
+            self.text_box.text.resize(previous_storage_len, ' ');
             self.text_box.recompute_layout();
 
             if self.cursor > end {
@@ -649,11 +564,12 @@ pub mod text {
             self.max_length = max_length;
             if let Some(max_length) = max_length {
                 if self.text_box.text_len() > max_length {
+                    let previous_storage_len = self.text_box.text.len();
                     let new_len = self.text_box.text_len().min(max_length);
                     self.text_box.text.truncate(new_len);
+                    self.text_box.text.resize(previous_storage_len, ' ');
                     self.text_box.current_length = new_len;
                     self.cursor = self.cursor.min(new_len);
-                    self.text_box.changed_chars = (0..new_len).collect();
                     self.text_box.recompute_layout();
                 }
             }
@@ -721,15 +637,15 @@ pub mod text {
 
     impl Displayable for TextBox {
         fn display(&self) {
-            // Rendering is handled by `get_changed_chars` during layout pass.
+            // Rendering is handled by `get_chars` during the layout pass.
         }
 
         fn name(&self) -> String {
             "TextBox".to_string()
         }
 
-        fn get_changed_chars(
-            &mut self,
+        fn get_chars(
+            &self,
             size: (u16, u16),
         ) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
@@ -739,10 +655,8 @@ pub mod text {
             const NO_WRAPPING_POINTS: u16 = 3;
             
             let mut width_overflow_line_idx = Vec::new();
-            let mut changes: BTreeMap<(u16, u16), char> = self
-                .changed_chars
-                .iter()
-                .filter_map(|i| self.get_char_placement(*i))
+            let mut chars: BTreeMap<(u16, u16), char> = (0..self.text.len())
+                .filter_map(|i| self.get_char_placement(i))
                 .filter(|(x, y, _)| {
                     if *x == size.0 {
                         width_overflow_line_idx.push(*y);
@@ -751,23 +665,20 @@ pub mod text {
                         *x < size.0 && *y < size.1
                     }
                 })
-                .map(|(x, y, c)| ((x, y), c))
+                .map(|(x, y, c)| ((y, x), c))
                 .collect();
             
             if let Wrapping::Off = self.wrapping {
                 for y in width_overflow_line_idx {
-                    for i in 0..NO_WRAPPING_POINTS {
-                        changes.insert((size.0 - 1 - i, y), '.');
+                    for i in 0..NO_WRAPPING_POINTS.min(size.0) {
+                        chars.insert((y, size.0 - 1 - i), '.');
                     }
                 }
             }
 
-            self.changed_chars.clear();
-
-            // Build an owned Vec for the output and return it via Cow::Owned so callers can take ownership if needed.
-            let out_vec = changes
+            let out_vec = chars
                 .into_iter()
-                .map(|(pos, c)| (pos.0, pos.1, c))
+                .map(|((y, x), c)| (x, y, c))
                 .collect::<Vec<_>>();
             
             std::borrow::Cow::Owned(out_vec)
@@ -777,7 +688,6 @@ pub mod text {
             if let crate::Event::Resize(w, h) = event {
                 self.size = (w, h);
                 self.recompute_layout();
-                self.changed_chars = (0..self.text.len()).collect();
             }
             if self.listener.is_listening_for(event.into()) {
                 (self.listener.on_event)(event, actions, self);
@@ -791,23 +701,22 @@ pub mod text {
 
     impl Displayable for TextInput {
         fn display(&self) {
-            // Rendering is handled by `get_changed_chars` during layout pass.
+            // Rendering is handled by `get_chars` during the layout pass.
         }
 
         fn name(&self) -> String {
             "TextInput".to_string()
         }
 
-        fn get_changed_chars(
-            &mut self,
+        fn get_chars(
+            &self,
             size: (u16, u16),
         ) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
 
-            // Delegate to the inner TextBox which will return a Cow.
-            self.text_box.get_changed_chars(size)
+            self.text_box.get_chars(size)
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
@@ -888,8 +797,8 @@ pub mod utils {
             todo!()
         }
 
-        fn get_changed_chars(
-            &mut self,
+        fn get_chars(
+            &self,
             size: (u16, u16),
         ) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             let _ = size;
@@ -905,53 +814,65 @@ mod factory_widgets_tests {
 
     #[test]
     fn adding_and_removing_text() {
-        let mut changed = Vec::<(u16, u16, char)>::new();
         let mut text_box = TextBox::new("123", Listener::empty(), TextAlign::Left);
 
         text_box.on_event(Event::Resize(16, 1), &mut ActionList::new());
 
         text_box.append_char('4');
         text_box.append_text("567");
-        changed = text_box.get_changed_chars((16, 1)).into_owned();
+        let chars = text_box.get_chars((16, 1)).into_owned();
         assert_eq!(
-            changed,
+            chars,
             (0..7)
                 .into_iter()
                 .map(|i| (i as u16, 0, char::from_digit(i + 1, 10).unwrap()))
                 .collect::<Vec<_>>()
         );
 
-        changed.drain(..);
-        changed = text_box.get_changed_chars((16, 1)).into_owned();
-        assert!(changed.is_empty());
-
         text_box.remove_text(text_box.text_len() - 3, text_box.text_len());
-        changed = text_box.get_changed_chars((16, 1)).into_owned();
+        let chars = text_box.get_chars((16, 1)).into_owned();
         assert_eq!(
-            changed,
-            (4..7).into_iter().map(|i| (i, 0, ' ')).collect::<Vec<_>>()
+            chars,
+            vec![
+                (0, 0, '1'),
+                (1, 0, '2'),
+                (2, 0, '3'),
+                (3, 0, '4'),
+                (4, 0, ' '),
+                (5, 0, ' '),
+                (6, 0, ' '),
+            ]
         );
 
-        changed.drain(..);
         text_box.append_text("56");
-        changed = text_box.get_changed_chars((16, 1)).into_owned();
+        let chars = text_box.get_chars((16, 1)).into_owned();
         assert_eq!(
-            changed,
-            (4..6)
-                .into_iter()
-                .map(|i| (i as u16, 0, char::from_digit(i + 1, 10).unwrap()))
-                .collect::<Vec<_>>()
+            chars,
+            vec![
+                (0, 0, '1'),
+                (1, 0, '2'),
+                (2, 0, '3'),
+                (3, 0, '4'),
+                (4, 0, '5'),
+                (5, 0, '6'),
+                (6, 0, ' '),
+            ]
         );
 
-        changed.drain(..);
         text_box.append_text("\n789xx");
         text_box.remove_text(text_box.text_len() - 1, text_box.text_len());
         text_box.remove_text(text_box.text_len() - 1, text_box.text_len());
 
-        changed = text_box.get_changed_chars((16, 2)).into_owned();
+        let chars = text_box.get_chars((16, 2)).into_owned();
         assert_eq!(
-            changed,
+            chars,
             vec![
+                (0, 0, '1'),
+                (1, 0, '2'),
+                (2, 0, '3'),
+                (3, 0, '4'),
+                (4, 0, '5'),
+                (5, 0, '6'),
                 (0, 1, '7'),
                 (1, 1, '8'),
                 (2, 1, '9'),
@@ -1254,6 +1175,10 @@ mod factory_widgets_tests {
         input.on_event(Event::KeyPress(crate::KeyCode::Left), &mut actions);
         input.on_event(Event::KeyPress(crate::KeyCode::Delete), &mut actions);
         assert_eq!(input.text(), "ac");
+        assert_eq!(
+            input.get_chars((16, 1)).as_ref(),
+            &[(0, 0, 'a'), (1, 0, 'c'), (2, 0, ' '), (3, 0, ' ')]
+        );
     }
 
     #[test]
@@ -1263,11 +1188,16 @@ mod factory_widgets_tests {
             0.625,
             Listener::empty(),
         );
-        let mut out = bar.get_changed_chars((4, 1)).into_owned();
+        let out = bar.get_chars((4, 1)).into_owned();
         assert_eq!(
             out,
             vec![(0, 0, '█'), (1, 0, '█'), (2, 0, '▌'), (3, 0, ' ')],
             "horizontal bar"
+        );
+        bar.set_amt(0.0);
+        assert_eq!(
+            bar.get_chars((4, 1)).as_ref(),
+            &[(0, 0, ' '), (1, 0, ' '), (2, 0, ' '), (3, 0, ' ')]
         );
 
         let mut vertical = crate::factory_widgets::progression::ProgressBar::new(
@@ -1275,7 +1205,7 @@ mod factory_widgets_tests {
             0.75,
             Listener::empty(),
         );
-        let mut out = vertical.get_changed_chars((1, 4)).into_owned();
+        let out = vertical.get_chars((1, 4)).into_owned();
         assert_eq!(
             out,
             vec![(0, 0, '█'), (0, 1, '█'), (0, 2, '█'), (0, 3, ' ')],

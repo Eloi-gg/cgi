@@ -154,9 +154,9 @@ pub trait Displayable: Send + Sync {
         None
     }
 
-    /// Returns the changed characters as a list of `(column, line, char)` tuples.
+    /// Returns all visible characters as `(column, line, char)` tuples.
     /// The coordinates are relative to the widget. (0,0) is the top-left corner.
     ///
     /// Implementations may return either a borrowed slice or an owned Vec wrapped in a Cow.
-    fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]>;
+    fn get_chars(&self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]>;
 }

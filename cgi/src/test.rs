@@ -14,7 +14,6 @@ mod inner {
     /// Useful for testing rendering and layout.
     pub struct FillWidget {
         pub ch: char,
-        buffer: Vec<(u16, u16, char)>,
     }
 
     impl Displayable for FillWidget {
@@ -26,14 +25,12 @@ mod inner {
             format!("FillWidget '{}'", self.ch)
         }
 
-        fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
-            self.buffer.clear();
-            for y in 0..size.1 {
-                for x in 0..size.0 {
-                    self.buffer.push((x, y, self.ch));
-                }
-            }
-            std::borrow::Cow::Borrowed(&self.buffer)
+        fn get_chars(&self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+            std::borrow::Cow::Owned(
+                (0..size.1)
+                    .flat_map(|y| (0..size.0).map(move |x| (x, y, self.ch)))
+                    .collect(),
+            )
         }
 
         fn on_event(&mut self, event: Event, actions: &mut crate::ActionList) {
@@ -44,7 +41,7 @@ mod inner {
     impl FillWidget {
         /// Creates a new FillWidget with the given character
         pub fn new(ch: char) -> Self {
-            Self { ch, buffer: Vec::new() }
+            Self { ch }
         }
     }
 
@@ -92,7 +89,7 @@ mod inner {
             format!("Dummy {}", self.data)
         }
 
-        fn get_changed_chars(&mut self, _size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&self, _size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             // No-op for testing
             return std::borrow::Cow::Borrowed(&[]);
         }
