@@ -372,8 +372,21 @@ pub mod text {
                         ));
                     }
                     for i in 0..line_diff {
-                        //TODO: depends on the wrap type
-                        self.eraser.push((old_line_width - i - 1, line_idx as u16));
+                        let position = match self.align {
+                            TextAlign::Left => old_line_width - i - 1,
+                            TextAlign::Center => {
+                                let new_line_width = *self.layout.get(line_idx).unwrap_or(&0);
+                                let offset_l = (self.size.0 - new_line_width) / 2;
+                                let offset_r = offset_l + (self.size.0 - new_line_width) % 2;
+                                if i % 2 == 0 {
+                                    offset_l - i / 2 - 1
+                                } else {
+                                    self.size.0 - offset_r + i / 2
+                                }
+                            }
+                            TextAlign::Right => self.size.0 - old_line_width + i,
+                        };
+                        self.eraser.push((position, line_idx as u16));
                     }
                 }
             }
@@ -738,7 +751,7 @@ pub mod text {
                     .map(|(x, y)| (x, y, ' '))
                     .collect::<Vec<_>>()
             };
-            
+
             chars.append(&mut eraser);
 
             std::borrow::Cow::Owned(chars)
@@ -977,10 +990,10 @@ mod factory_widgets_tests {
 
     #[test]
     fn set_text() {
-        let size = (35, 4);
+        let size = (8, 4);
         let mut output = TestOutput::<35, 4>::new();
         let mut text_box = WidgetBuilder::new(TextBox::new(
-            "rrrrrrrrrrrrrrrrrrrrrrrrr",
+            "rrrrrrrrr",
             super::Listener::empty(),
             TextAlign::Left,
         ))
@@ -1101,7 +1114,7 @@ mod factory_widgets_tests {
         let mut chars = edit.get_chars(size).to_vec();
         chars.sort();
         chars.dedup();
-        
+
         assert_eq!(
             chars,
             vec![
@@ -1121,8 +1134,76 @@ mod factory_widgets_tests {
                 (3, 1, 'c'),
                 (3, 2, ' '),
                 (3, 3, 'a'),
-            ]);
-        
+            ]
+        );
+
+        // RIGHT ALIGN
+        edit.set_text("");
+        let _ = edit.get_chars(size).to_vec();
+        edit.set_align(TextAlign::Right);
+        edit.set_text("ABC\nDEF");
+        let chars = edit.get_chars(size).to_vec();
+        assert_eq!(
+            chars,
+            vec![
+                (5, 0, 'A'),
+                (6, 0, 'B'),
+                (7, 0, 'C'),
+                (5, 1, 'D'),
+                (6, 1, 'E'),
+                (7, 1, 'F'),
+            ]
+        );
+
+        let s1 = "AB\nCDEF";
+        edit.set_text(s1);
+        let chars = edit.get_chars(size).to_vec();
+        assert_eq!(
+            chars,
+            vec![
+                (6, 0, 'A'),
+                (7, 0, 'B'),
+                (4, 1, 'C'),
+                (5, 1, 'D'),
+                (6, 1, 'E'),
+                (7, 1, 'F'),
+                (5, 0, ' '),
+            ]
+        );
+
+        // CENTER ALIGN
+        edit.set_text("");
+        let _ = edit.get_chars(size).to_vec();
+        edit.set_align(TextAlign::Center);
+        edit.set_text("ABC\nDEF");
+        let chars = edit.get_chars(size).to_vec();
+        assert_eq!(
+            chars,
+            vec![
+                (2, 0, 'A'),
+                (3, 0, 'B'),
+                (4, 0, 'C'),
+                (2, 1, 'D'),
+                (3, 1, 'E'),
+                (4, 1, 'F'),
+            ]
+        );
+
+        let s1 = "AB\nCDEF";
+        edit.set_text(s1);
+        let chars = edit.get_chars(size).to_vec();
+        assert_eq!(
+            chars,
+            vec![
+                (3, 0, 'A'),
+                (4, 0, 'B'),
+                (2, 1, 'C'),
+                (3, 1, 'D'),
+                (4, 1, 'E'),
+                (5, 1, 'F'),
+                (2, 0, ' '),
+            ]
+        );
 
         drop(edit);
         layout
