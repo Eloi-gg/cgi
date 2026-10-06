@@ -713,7 +713,9 @@ pub mod text {
                 .filter_map(|i| self.get_char_placement(i))
                 .filter(|(x, y, _)| {
                     if *x == size.0 {
-                        width_overflow_line_idx.push(*y);
+                        if *y < self.size.1 {
+                            width_overflow_line_idx.push(*y);
+                        }
                         false
                     } else {
                         *x < size.0 && *y < size.1
@@ -722,13 +724,16 @@ pub mod text {
                 .collect::<Vec<_>>();
 
             // TODO
-            // if let Wrapping::Off = self.wrapping {
-            //     for y in width_overflow_line_idx {
-            //         for i in 0..NO_WRAPPING_POINTS.min(size.0) {
-            //             chars.insert((y, size.0 - 1 - i), '.');
-            //         }
-            //     }
-            // }
+            if let Wrapping::Off = self.wrapping {
+                if width_overflow_line_idx.len() > 0 {
+                    crate::log::log(&format!("s{} {:?}", self.size.1, &width_overflow_line_idx));
+                }
+                for y in width_overflow_line_idx {
+                    for i in 0..NO_WRAPPING_POINTS.min(size.0) {
+                        chars.push((size.0 - 1 - i, y, '.'));
+                    }
+                }
+            }
 
             // To check if we are not erasing what we plan on rendering
 
@@ -741,7 +746,7 @@ pub mod text {
                     .drain(..)
                     .filter(|(x, y)| {
                         let key = ((*x as u32) << 16) | *y as u32;
-                        !lookup.contains(&key)
+                        !lookup.contains(&key) && *y < self.size.1
                     })
                     .map(|(x, y)| (x, y, ' '))
                     .collect::<Vec<_>>()
