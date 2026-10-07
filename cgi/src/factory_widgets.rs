@@ -303,7 +303,10 @@ pub mod text {
             let starting_place = self.get_char_placement(start).unwrap();
             let mut line_start = 0;
 
-            let old_layout = self.layout.drain((starting_place.1 as usize)..).collect::<Vec<u16>>();
+            let old_layout = self
+                .layout
+                .drain((starting_place.1 as usize)..)
+                .collect::<Vec<u16>>();
 
             self.line_breaks = self
                 .text
@@ -340,7 +343,7 @@ pub mod text {
                             line_len -= self.size.0;
                             self.layout.push(self.size.0 as u16);
                         }
-                        
+
                         self.layout.push(line_len as u16);
                         line_start = break_idx + 1;
                     }
@@ -366,7 +369,7 @@ pub mod text {
                     // }
                 }
             }
-            
+
             let layout_diff = self.layout_diff(&old_layout, &self.layout);
             for (line_idx, (line_diff, old_line_width)) in
                 layout_diff.iter().zip(old_layout.iter()).enumerate()
@@ -407,7 +410,7 @@ pub mod text {
                 self.layout.clear();
                 return;
             }
-            
+
             self.line_breaks = self
                 .text
                 .iter()
@@ -418,11 +421,6 @@ pub mod text {
 
             match self.wrapping {
                 Wrapping::Off => {
-                    if self.size.0 == 0 {
-                        self.layout.clear();
-                        return;
-                    }
-
                     let mut layout = Vec::new();
                     let mut start = 0usize;
 
@@ -439,7 +437,58 @@ pub mod text {
 
                     self.layout = layout;
                 }
-                Wrapping::PerWord => {}
+                Wrapping::PerWord => {
+                    let mut layout = Vec::new();
+                    let mut start = 0usize;
+
+                    for &break_idx in &self.line_breaks {
+                        let mut whitespaces = self.text[start..break_idx]
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, c)| if c.is_whitespace() { Some(start + i) } else { None })
+                            .collect::<Vec<_>>();
+
+                        let mut is_last = false;
+
+                        while start < break_idx {
+                            let last_whitespace =
+                                whitespaces.binary_search(&(self.size.0 as usize + start));
+
+                            let last_whitespace = match last_whitespace {
+                                Ok(idx) => whitespaces[idx],
+                                // idx is the position where target would be inserted
+                                // The number at idx-1 is the largest number less than target
+                                Err(idx) => {
+                                    // 0 => no match, everything is greater than target: cant fit,
+                                    if idx == 0 {
+                                        whitespaces[idx]
+                                    } else {
+                                        if idx == whitespaces.len() {
+                                            is_last = true;
+                                        }
+                                        whitespaces[idx - 1]
+                                    }
+                                }
+                            };
+
+                            let line_len = last_whitespace.saturating_sub(start);
+                            layout.push(line_len as u16);
+                            start = last_whitespace + 1;
+
+                            if is_last {
+                                let line_len = break_idx.saturating_sub(start);
+                                layout.push(line_len as u16);
+                                start = break_idx + 1;
+                                break;
+                            }
+                        }
+                    }
+
+                    let remaining = self.current_length.saturating_sub(start);
+                    if layout.is_empty() || remaining > 0 {
+                        layout.push(remaining as u16);
+                    }
+                }
                 Wrapping::PerLetter => {
                     for break_idx in self.line_breaks.iter() {
                         let mut line_len = break_idx.saturating_sub(line_start) as u16;
@@ -448,7 +497,7 @@ pub mod text {
                             line_len -= self.size.0;
                             self.layout.push(self.size.0 as u16);
                         }
-                        
+
                         self.layout.push(line_len as u16);
                         line_start = break_idx + 1;
                     }
@@ -456,7 +505,7 @@ pub mod text {
                     if remaining > 0 {
                         self.layout.push(remaining as u16);
                     }
-                    // 
+                    //
                     // if self.size.0 == 0 {
                     //     return;
                     // }
@@ -503,7 +552,10 @@ pub mod text {
                             }
                             TextAlign::Right => self.size.0 - old_line_width + i,
                         };
-                        self.eraser.push((position.min(self.size.0), (line_idx as u16).min(self.size.1) ));
+                        self.eraser.push((
+                            position.min(self.size.0),
+                            (line_idx as u16).min(self.size.1),
+                        ));
                     }
                 }
             }
@@ -570,7 +622,7 @@ pub mod text {
                         character,
                     ));
                 }
-                Wrapping::PerWord => todo!(),
+                Wrapping::PerWord => {}
                 Wrapping::PerLetter => {
                     for (line, &line_width) in self.layout.iter().enumerate() {
                         let line_end = line_start + line_width;
