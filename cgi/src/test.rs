@@ -17,14 +17,6 @@ mod inner {
     }
 
     impl Displayable for FillWidget {
-        fn display(&self) {
-            // No-op for testing
-        }
-
-        fn name(&self) -> String {
-            format!("FillWidget '{}'", self.ch)
-        }
-
         fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             let ch = self.ch;
             std::borrow::Cow::Owned(
@@ -82,14 +74,6 @@ mod inner {
     }
 
     impl Displayable for Dummy {
-        fn display(&self) {
-            println!("Displaying Dummy with data: {}", self.data);
-        }
-
-        fn name(&self) -> String {
-            format!("Dummy {}", self.data)
-        }
-
         fn get_chars(&mut self, _size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             // No-op for testing
             return std::borrow::Cow::Borrowed(&[]);
@@ -197,8 +181,7 @@ mod inner {
     pub mod strings {
 
         pub fn lorem_ipsum_long() -> String {
-            "Lorem ipsum dolor sit amet, consectetur adipiscing elit\n"
-                .repeat(15)
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit\n".repeat(15)
         }
 
         pub fn lorem_ipsum_short() -> &'static str {

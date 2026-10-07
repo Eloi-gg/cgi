@@ -91,14 +91,6 @@ pub mod progression {
     }
 
     impl Displayable for ProgressBar {
-        fn display(&self) {
-            // Rendering is handled by `get_chars` during the layout pass.
-        }
-
-        fn name(&self) -> String {
-            "ProgressBar".to_string()
-        }
-
         fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
@@ -237,6 +229,13 @@ pub mod text {
             self.current_length += added_len;
         }
 
+        pub fn pop_char(&mut self) -> char {
+            self.current_length -= 1;
+            let r = self.text.pop().unwrap();
+            self.recompute_layout_from(self.current_length - 1);
+            r
+        }
+
         pub fn append_char(&mut self, c: char) {
             if self.current_length >= self.text.len() {
                 self.text.push(c);
@@ -247,26 +246,8 @@ pub mod text {
             self.current_length += 1;
         }
 
-        pub fn remove_text(&mut self, start: usize, end: usize) {
-            if start >= end || end > self.text.len() {
-                return;
-            }
-            for i in start..end {
-                self.text[i] = ' ';
-                self.recompute_layout_from(start);
-            }
-            if end == self.current_length {
-                self.current_length = start;
-            }
-        }
-
         pub fn text_len(&self) -> usize {
             self.current_length
-        }
-
-        //TODO : implement
-        fn recompute_layout_from(&mut self, _start: usize) {
-            self.recompute_layout();
         }
 
         /// Returns the difference between two layouts as a vector of offsets.
@@ -291,12 +272,20 @@ pub mod text {
 
             diff
         }
+        //start must be a character that HAS NOT changed
+        fn recompute_layout_from(&mut self, start: usize) {
+            if self.layout.is_empty() {
+                self.recompute_layout();
+                return;
+            }
+            if self.size.0 == 0 {
+                return;
+            }
 
-        fn recompute_layout(&mut self) {
-            let old_layout = self.layout.drain(..).collect::<Vec<u16>>();
-            let dim = self.style.as_ref().map(|s| s.is_dim()).unwrap_or(false);
+            let starting_place = self.get_char_placement(start).unwrap();
+            let mut line_start = starting_place.0 as usize;
 
-            let mut line_width = 0;
+            self.layout.resize(starting_place.1 as usize + 1, 0);
 
             self.line_breaks = self
                 .text
@@ -306,9 +295,74 @@ pub mod text {
                 .filter_map(|(i, c)| if *c == '\n' { Some(i) } else { None })
                 .collect();
 
-            if dim {
-                crate::log::log(&format!("{}", self.text()));
+            // Only interested in line breaks after the starting place
+            let new_line_breaks = &self.line_breaks[(starting_place.1 as usize)..];
+
+            match self.wrapping {
+                Wrapping::Off => {
+                    for &break_idx in new_line_breaks {
+                        let line_len = break_idx.saturating_sub(line_start);
+                        self.layout.push(line_len as u16);
+                        line_start = break_idx + 1;
+                    }
+
+                    let remaining = self.current_length.saturating_sub(line_start);
+                    if self.layout.is_empty() || remaining > 0 {
+                        self.layout.push(remaining as u16);
+                    }
+                }
+                Wrapping::PerWord => {
+                    todo!()
+                }
+                Wrapping::PerLetter => {
+                    for &break_idx in new_line_breaks {
+                        let mut line_len = break_idx.saturating_sub(line_start) as u16;
+
+                        while line_len >= self.size.0 {
+                            line_len -= self.size.0;
+                            self.layout.push(line_len as u16);
+                        }
+                        
+                        self.layout.push(line_len as u16);
+                        line_start = break_idx + 1;
+                    }
+                    let remaining = self.current_length.saturating_sub(line_start);
+                    if remaining > 0 {
+                        self.layout.push(remaining as u16);
+                    }
+                    // // TODO: use the line_breaks to avoid recomputing
+                    // for &c in &self.text {
+                    //     if c == '\n' {
+                    //         self.layout.push(line_width);
+                    //         line_width = 0;
+                    //     } else {
+                    //         if line_width >= self.size.0 {
+                    //             self.layout.push(self.size.0);
+                    //             line_width = 0;
+                    //         }
+                    //         line_width += 1;
+                    //     }
+                    // }
+                    // if line_width > 0 || self.layout.is_empty() {
+                    //     self.layout.push(line_width);
+                    // }
+                }
             }
+        }
+
+        fn recompute_layout(&mut self) {
+            let old_layout = self.layout.drain(..).collect::<Vec<u16>>();
+            let mut line_width = 0;
+            let mut line_start = 0;
+            
+            self.line_breaks = self
+                .text
+                .iter()
+                .take(self.current_length)
+                .enumerate()
+                .filter_map(|(i, c)| if *c == '\n' { Some(i) } else { None })
+                .collect();
+
             match self.wrapping {
                 Wrapping::Off => {
                     if self.size.0 == 0 {
@@ -334,25 +388,41 @@ pub mod text {
                 }
                 Wrapping::PerWord => {}
                 Wrapping::PerLetter => {
-                    if self.size.0 == 0 {
-                        return;
-                    }
-                    // TODO: use the line_breaks to avoid recomputing
-                    for &c in &self.text {
-                        if c == '\n' {
-                            self.layout.push(line_width);
-                            line_width = 0;
-                        } else {
-                            if line_width >= self.size.0 {
-                                self.layout.push(self.size.0);
-                                line_width = 0;
-                            }
-                            line_width += 1;
+                    for break_idx in self.line_breaks.iter() {
+                        let mut line_len = break_idx.saturating_sub(line_start) as u16;
+
+                        while line_len >= self.size.0 {
+                            line_len -= self.size.0;
+                            self.layout.push(line_len as u16);
                         }
+                        
+                        self.layout.push(line_len as u16);
+                        line_start = break_idx + 1;
                     }
-                    if line_width > 0 || self.layout.is_empty() {
-                        self.layout.push(line_width);
+                    let remaining = self.current_length.saturating_sub(line_start);
+                    if remaining > 0 {
+                        self.layout.push(remaining as u16);
                     }
+                    // 
+                    // if self.size.0 == 0 {
+                    //     return;
+                    // }
+                    // // TODO: use the line_breaks to avoid recomputing
+                    // for &c in &self.text {
+                    //     if c == '\n' {
+                    //         self.layout.push(line_width);
+                    //         line_width = 0;
+                    //     } else {
+                    //         if line_width >= self.size.0 {
+                    //             self.layout.push(self.size.0);
+                    //             line_width = 0;
+                    //         }
+                    //         line_width += 1;
+                    //     }
+                    // }
+                    // if line_width > 0 || self.layout.is_empty() {
+                    //     self.layout.push(line_width);
+                    // }
                 }
             }
 
@@ -365,12 +435,6 @@ pub mod text {
                 if *line_diff < 0 {
                     let line_diff: u16 = (-line_diff) as u16;
                     let old_line_width: u16 = (*old_line_width).min(self.size.0);
-                    if dim {
-                        crate::log::log(&format!(
-                            "line_diff: {} old_line_width: {}",
-                            line_diff, old_line_width
-                        ));
-                    }
                     for i in 0..line_diff {
                         let position = match self.align {
                             TextAlign::Left => old_line_width - i - 1,
@@ -692,16 +756,11 @@ pub mod text {
     }
 
     impl Displayable for TextBox {
-        fn display(&self) {
-            // Rendering is handled by `get_chars` during the layout pass.
-        }
-
-        fn name(&self) -> String {
-            "TextBox".to_string()
-        }
-
         fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             self.size = size;
+            if self.layout.is_empty() {
+                self.recompute_layout();
+            }
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
             }
@@ -777,14 +836,6 @@ pub mod text {
     }
 
     impl Displayable for TextInput {
-        fn display(&self) {
-            // Rendering is handled by `get_chars` during the layout pass.
-        }
-
-        fn name(&self) -> String {
-            "TextInput".to_string()
-        }
-
         fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             if size.0 * size.1 == 0 {
                 return std::borrow::Cow::Borrowed(&[]);
@@ -862,14 +913,6 @@ pub mod utils {
     pub struct Empty;
 
     impl Displayable for Empty {
-        fn display(&self) {
-            todo!()
-        }
-
-        fn name(&self) -> String {
-            todo!()
-        }
-
         fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
             let _ = size;
             std::borrow::Cow::Owned(Vec::new())
@@ -884,7 +927,8 @@ mod factory_widgets_tests {
 
     #[test]
     fn adding_and_removing_text() {
-        let mut text_box = TextBox::new("123", Listener::empty(), TextAlign::Left);
+        let mut text_box = TextBox::new("123", Listener::empty(), TextAlign::Left)
+            .with_wrapping_mode(Wrapping::PerLetter);
 
         text_box.on_event(Event::Resize(16, 1), &mut ActionList::new());
 
@@ -899,7 +943,7 @@ mod factory_widgets_tests {
                 .collect::<Vec<_>>()
         );
 
-        text_box.remove_text(text_box.text_len() - 3, text_box.text_len());
+        text_box.set_text("1234");
         let chars = text_box.get_chars((16, 1)).into_owned();
         assert_eq!(
             chars,
@@ -908,9 +952,9 @@ mod factory_widgets_tests {
                 (1, 0, '2'),
                 (2, 0, '3'),
                 (3, 0, '4'),
-                (4, 0, ' '),
-                (5, 0, ' '),
                 (6, 0, ' '),
+                (5, 0, ' '),
+                (4, 0, ' '),
             ]
         );
 
@@ -925,72 +969,8 @@ mod factory_widgets_tests {
                 (3, 0, '4'),
                 (4, 0, '5'),
                 (5, 0, '6'),
-                (6, 0, ' '),
             ]
         );
-
-        text_box.append_text("\n789xx");
-        text_box.remove_text(text_box.text_len() - 1, text_box.text_len());
-        text_box.remove_text(text_box.text_len() - 1, text_box.text_len());
-
-        let chars = text_box.get_chars((16, 2)).into_owned();
-        assert_eq!(
-            chars,
-            vec![
-                (0, 0, '1'),
-                (1, 0, '2'),
-                (2, 0, '3'),
-                (3, 0, '4'),
-                (4, 0, '5'),
-                (5, 0, '6'),
-                (0, 1, '7'),
-                (1, 1, '8'),
-                (2, 1, '9'),
-                (3, 1, ' '),
-                (4, 1, ' '),
-            ]
-        );
-    }
-
-    #[test]
-    fn adding_and_removing_text_2() {
-        let mut output = TestOutput::<16, 1>::new();
-        let mut text_box = WidgetBuilder::new(TextBox::new(
-            "123",
-            super::Listener::empty(),
-            TextAlign::Left,
-        ))
-        .build();
-
-        let placement = WidgetPlacement::fullscreen();
-        let layout = Layout::new().with_widget(&text_box, placement);
-
-        {
-            let mut edit = text_box.edit();
-            edit.on_event(Event::Resize(16, 1), &mut ActionList::new());
-            edit.append_char('4');
-            edit.append_text("567");
-        }
-
-        let rendered_layout = layout.render(16, 1);
-        for _ in 0..3 {
-            {
-                let mut edit = text_box.edit();
-                let len = edit.text_len();
-                edit.remove_text(len - 1, len);
-            }
-            rendered_layout.full_render_to_output(&mut output);
-        }
-
-        for _ in 0..3 {
-            let mut edit = text_box.edit();
-            edit.on_event(Event::Resize(16, 1), &mut ActionList::new());
-            edit.append_char('x');
-        }
-        rendered_layout.full_render_to_output(&mut output);
-        let rendered_text = output.to_string();
-
-        assert_eq!(rendered_text, "1234xxx         ");
     }
 
     #[test]

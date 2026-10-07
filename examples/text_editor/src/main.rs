@@ -53,7 +53,7 @@ fn on_event(
                 text_box.append_char('\n');
             }
             KeyCode::Backspace => {
-                text_box.remove_text(text_box.text_len() - 1, text_box.text_len());
+                text_box.pop_char();
             }
             _ => {}
         }

@@ -39,7 +39,8 @@ pub mod create {
 pub mod connect {
     use std::{
         io::{BufRead as _, BufReader, Write},
-        net::{TcpListener, TcpStream}, time,
+        net::{TcpListener, TcpStream},
+        time,
     };
 
     pub struct DebugConsole {
@@ -85,10 +86,6 @@ pub mod connect {
         pub fn send_message(&mut self, msg: &str) {
             self.stream.write_all(msg.as_bytes()).unwrap();
             self.stream.write_all(b"\n").unwrap();
-        }
-
-        pub fn name(&self) -> &str {
-            &self.name
         }
     }
 

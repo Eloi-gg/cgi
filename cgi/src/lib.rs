@@ -15,10 +15,10 @@ pub mod test;
 
 pub use application::Application;
 pub use coordinate::Coordinate;
+pub use crossterm::event::KeyCode;
 pub use layout::Layout;
 pub use layout::WidgetPlacement;
 pub use widget::{Widget, WidgetBuilder};
-pub use crossterm::event::KeyCode;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Event {
@@ -144,8 +144,6 @@ impl From<crossterm::event::Event> for Event {
 }
 
 pub trait Displayable: Send + Sync {
-    fn display(&self); // TODO delete
-    fn name(&self) -> String; // TODO delete
     fn on_event(&mut self, event: Event, actions: &mut ActionList) {
         let _ = event;
         let _ = actions;

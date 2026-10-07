@@ -7,14 +7,6 @@ struct CustomWidget {
 }
 
 impl Displayable for CustomWidget {
-    fn display(&self) {
-        println!("Displaying CustomWidget with data: {}", self.data);
-    }
-
-    fn name(&self) -> String {
-        format!("CustomWidget {}", self.data)
-    }
-
     fn get_chars(&mut self, _size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
         std::borrow::Cow::Borrowed(&[])
     }
@@ -39,24 +31,37 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
  est d'autant plus forte que le phénomène de foudre qui le provoque est plus proche du lieu où se situe l'observateur,\
  à décharge électrostatique équivalente, sans vent ni relief et à moins de conditions de propagation anormale du son dans l'air[2].";
 
-    let text_widget = WidgetBuilder::new(TextBox::new(text1, Listener::empty(), factory_widgets::text::TextAlign::Left))
-        .with_outline(cgi::symbols::OutlineStyle::Double)
-        .build();
-    let text_widget2 = WidgetBuilder::new(TextBox::new(text2, Listener::empty(), factory_widgets::text::TextAlign::Left))
-        .with_outline(cgi::symbols::OutlineStyle::Rounded)
-        .build();
+    let text_widget = WidgetBuilder::new(TextBox::new(
+        text1,
+        Listener::empty(),
+        factory_widgets::text::TextAlign::Left,
+    ))
+    .with_outline(cgi::symbols::OutlineStyle::Double)
+    .build();
+    let text_widget2 = WidgetBuilder::new(TextBox::new(
+        text2,
+        Listener::empty(),
+        factory_widgets::text::TextAlign::Left,
+    ))
+    .with_outline(cgi::symbols::OutlineStyle::Rounded)
+    .build();
 
     let placement = WidgetPlacement::new_with_size(0, 0, 24, 8);
-    let placement2 = placement.shift(30, 4).expand_or_shrink(-3, 0).with_width(0.5);
+    let placement2 = placement
+        .shift(30, 4)
+        .expand_or_shrink(-3, 0)
+        .with_width(0.5);
 
-    text_widget.edit().set_style(cgi::text_formatting::attributes::ITALIC | cgi::text_formatting::colors::DARKBLUE);
-    
+    text_widget.edit().set_style(
+        cgi::text_formatting::attributes::ITALIC | cgi::text_formatting::colors::DARKBLUE,
+    );
+
     let layout = Layout::new()
         .with_widget(&text_widget, placement)
         .with_widget(&text_widget2, placement2);
     app.set_layout_behaviour(|(w, h)| 0);
     app.add_layout(0, layout);
-    
+
     app.run();
 }
 
@@ -65,8 +70,12 @@ fn scenario_2() {
 
     let (mut app, _) = cgi::Application::new();
 
-    let title = WidgetBuilder::new(TextBox::new("Title", Listener::empty(), factory_widgets::text::TextAlign::Left))
-        .build();
+    let title = WidgetBuilder::new(TextBox::new(
+        "Title",
+        Listener::empty(),
+        factory_widgets::text::TextAlign::Left,
+    ))
+    .build();
     let mut layout = cgi::Layout::new();
     layout.add_widget(&title, WidgetPlacement::fullscreen());
     app.set_layout_behaviour(|(w, h)| 0);
