@@ -101,17 +101,10 @@ pub(crate) struct MaskStack {
 }
 
 impl MaskStack {
-    pub fn new_empty() -> Self {
+    pub fn new() -> Self {
         MaskStack {
             unit_masks: vec![],
             combined_masks: vec![],
-        }
-    }
-
-    pub fn new(mask: Mask) -> Self {
-        MaskStack {
-            unit_masks: vec![mask.clone()],
-            combined_masks: vec![mask],
         }
     }
 
@@ -140,12 +133,16 @@ impl MaskStack {
     }
 
     fn build_combined_masks(&mut self) {
-        self.combined_masks = self.unit_masks.clone();
-        for i in 0..self.unit_masks.len() {
-            for j in (i + 1)..self.unit_masks.len() {
-                self.combined_masks[i] = self.combined_masks[i].combined(&self.unit_masks[j]);
-            }
+        self.combined_masks.clear();
+        let masks = self.unit_masks.drain(..).collect::<Vec<_>>();
+        for mask in masks {
+            self.push(mask);
         }
+        // for i in 0..self.unit_masks.len() {
+        //     for j in (i + 1)..self.unit_masks.len() {
+        //         self.combined_masks[i] = self.combined_masks[i].combined(&self.unit_masks[j]);
+        //     }
+        // }
     }
 }
 
@@ -164,7 +161,7 @@ pub struct Layout {
 
 pub(crate) struct RenderedLayout {
     pub(crate) layers: Vec<HashMap<WidgetHdl, ComputedWidgetPlacement>>,
-    pub(crate) layer_mapping: HashMap<WidgetHdl, usize>,
+    pub(crate) widget_layer: HashMap<WidgetHdl, usize>,
     pub(crate) masks: MaskStack,
     pub(crate) current_layer: usize, //TODO: is this even used
 }
@@ -173,8 +170,8 @@ impl RenderedLayout {
     pub fn new_empty() -> Self {
         RenderedLayout {
             layers: vec![HashMap::new()],
-            layer_mapping: HashMap::new(),
-            masks: MaskStack::new_empty(),
+            widget_layer: HashMap::new(),
+            masks: MaskStack::new(),
             current_layer: 0,
         }
     }
@@ -184,7 +181,8 @@ impl RenderedLayout {
         widget: &WidgetHdl,
         only_insides: bool,
     ) -> ComputedWidgetPlacement {
-        let placement = self.layers[self.current_layer][widget];
+        let widget_layer = self.widget_layer[widget];
+        let placement = self.layers[widget_layer][widget];
 
         return if only_insides {
             let outlined = widget.widget.data.lock().unwrap().outline.is_some();
@@ -551,7 +549,7 @@ impl Layout {
     pub(crate) fn render(&self, size_x: i32, size_y: i32) -> RenderedLayout {
         let mut layers = Vec::new();
         let mut layer_mapping = HashMap::new();
-        let mut masks = MaskStack::new_empty();
+        let mut masks = MaskStack::new();
 
         for (layer_idx, layer) in self.layers.iter().enumerate() {
             let mut rendered_layer = HashMap::new();
@@ -586,7 +584,7 @@ impl Layout {
 
         let mut r = RenderedLayout {
             layers,
-            layer_mapping,
+            widget_layer: layer_mapping,
             masks,
             current_layer: self.current_layer,
         };
@@ -954,19 +952,22 @@ pub(crate) mod tests {
                 height: 3,
             };
 
+            let mc1 = Mask::new_with(width, height, c1);
             let mc2 = Mask::new_with(width, height, c2);
             let mc3 = Mask::new_with(width, height, c3);
             let mc4 = Mask::new_with(width, height, c4);
 
             let original = {
-                let mut r = MaskStack::new(Mask::new_with(width, height, c1));
+                let mut r = MaskStack::new();
+                r.push(mc1.clone());
                 r.push(mc2.clone());
                 r.push(mc3.clone());
                 r
             };
 
             let w_c4 = {
-                let mut r = MaskStack::new(Mask::new_with(width, height, c1));
+                let mut r = MaskStack::new();
+                r.push(mc1.clone());
                 r.push(mc4.clone());
                 r.push(mc3.clone());
                 r
@@ -976,21 +977,35 @@ pub(crate) mod tests {
 
             fn assert_mask_stack_equals(a: &MaskStack, b: &MaskStack) {
                 assert_eq!(a.combined_masks.len(), b.combined_masks.len());
+                let mut ok = true;
                 for (i, mask) in a.combined_masks.iter().enumerate() {
                     if !mask.equals(&b.combined_masks[i]) {
                         println!(
-                            "DIFF at mask {}:\n{:?} !=\n{:?}",
+                            "DIFF at combined mask {}:\n{:?} !=\n{:?}",
                             i, mask, b.combined_masks[i]
                         );
-                        panic!("");
+                        ok = false;
                     }
-                    // assert!(mask.equals(&b.combined_masks[i]));
                 }
+                for (i, mask) in a.unit_masks.iter().enumerate() {
+                    if !mask.equals(&b.unit_masks[i]) {
+                        println!(
+                            "DIFF at unit mask {}:\n{:?} !=\n{:?}",
+                            i, mask, b.unit_masks[i]
+                        );
+                        ok = false;
+                    }
+                }
+                assert!(ok);
             }
+            // original = 1|2|3
+            // w_c4 = 1|4|3
 
+            // modified = 1|4|3
             modified.set_mask(1, mc4.clone());
             assert_mask_stack_equals(&modified, &w_c4);
 
+            // modified = 1|2|3
             modified.set_mask(1, mc2.clone());
             assert_mask_stack_equals(&modified, &original);
 

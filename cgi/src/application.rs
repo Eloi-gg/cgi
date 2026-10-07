@@ -162,6 +162,18 @@ impl Application {
         self.size = (new_x, new_y);
         self.rendered_layout =
             self.layouts[&self.current_layout].render(self.size.0 as i32, self.size.1 as i32);
+
+        let mut actions = ActionList::new();
+        for widget in self.rendered_layout.layers[self.rendered_layout.current_layer].keys() {
+            let widget_coords = self.rendered_layout.get_widget_coords(widget, true);
+            widget.write_displayable().unwrap().on_event(
+                crate::Event::Resize(widget_coords.width as _, widget_coords.height as _),
+                &mut actions,
+            );
+        }
+        for action in actions.drain() {
+            self.handle_widget_actions(action);
+        }
         self.output.flush();
         self.update();
     }
@@ -292,13 +304,6 @@ impl Application {
 
         // Initial resize
         self.size_changed(cols, rows);
-        for widget in self.rendered_layout.layers[self.rendered_layout.current_layer].keys() {
-            widget
-                .write_displayable()
-                .unwrap()
-                .on_event(crate::Event::Resize(cols, rows), &mut ActionList::new());
-            self.selected_widget = Some(widget.clone());
-        }
 
         // Event loop
         loop {

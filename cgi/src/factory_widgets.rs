@@ -225,8 +225,8 @@ pub mod text {
                 }
             }
 
-            self.recompute_layout_from(self.current_length);
             self.current_length += added_len;
+            self.recompute_layout_from(self.current_length - 1 - added_len);
         }
 
         pub fn pop_char(&mut self) -> char {
@@ -236,14 +236,31 @@ pub mod text {
             r
         }
 
+        pub fn pop_char_at(&mut self, index: usize) -> char {
+            let r = self.text.remove(index);
+            self.current_length -= 1;
+            self.recompute_layout_from(index - 1);
+            r
+        }
+
+        pub fn remove_text(&mut self, start: usize, end: usize) {
+            let drain = self.text.drain(..).collect::<Vec<char>>();
+            let part_a = drain[..start].as_ref();
+            let part_b = drain[end..].as_ref();
+            self.text.extend_from_slice(part_a);
+            self.text.extend_from_slice(part_b);
+            self.current_length = self.text.len();
+            self.recompute_layout_from(start - 1);
+        }
+
         pub fn append_char(&mut self, c: char) {
             if self.current_length >= self.text.len() {
                 self.text.push(c);
             } else {
                 self.text[self.current_length] = c;
             }
-            self.recompute_layout_from(self.current_length);
             self.current_length += 1;
+            self.recompute_layout_from(self.current_length - 2);
         }
 
         pub fn text_len(&self) -> usize {
@@ -274,6 +291,7 @@ pub mod text {
         }
         //start must be a character that HAS NOT changed
         fn recompute_layout_from(&mut self, start: usize) {
+            // TODO: = recompute_layout_from(0)
             if self.layout.is_empty() {
                 self.recompute_layout();
                 return;
@@ -283,9 +301,9 @@ pub mod text {
             }
 
             let starting_place = self.get_char_placement(start).unwrap();
-            let mut line_start = starting_place.0 as usize;
+            let mut line_start = 0;
 
-            self.layout.resize(starting_place.1 as usize + 1, 0);
+            let old_layout = self.layout.drain((starting_place.1 as usize)..).collect::<Vec<u16>>();
 
             self.line_breaks = self
                 .text
@@ -320,7 +338,7 @@ pub mod text {
 
                         while line_len >= self.size.0 {
                             line_len -= self.size.0;
-                            self.layout.push(line_len as u16);
+                            self.layout.push(self.size.0 as u16);
                         }
                         
                         self.layout.push(line_len as u16);
@@ -348,12 +366,47 @@ pub mod text {
                     // }
                 }
             }
+            
+            let layout_diff = self.layout_diff(&old_layout, &self.layout);
+            for (line_idx, (line_diff, old_line_width)) in
+                layout_diff.iter().zip(old_layout.iter()).enumerate()
+            {
+                // if line_diff is negative, then the line was longer before than after the layout change.
+                // we need to erase the characters that were there before the layout change
+                if *line_diff < 0 {
+                    let line_diff: u16 = (-line_diff) as u16;
+                    let old_line_width: u16 = (*old_line_width).min(self.size.0);
+                    for i in 0..line_diff {
+                        let position = match self.align {
+                            TextAlign::Left => old_line_width - i - 1,
+                            TextAlign::Center => {
+                                let new_line_width = *self.layout.get(line_idx).unwrap_or(&0);
+                                let offset_l = (self.size.0 - new_line_width) / 2;
+                                let offset_r = offset_l + (self.size.0 - new_line_width) % 2;
+                                if i % 2 == 0 {
+                                    offset_l - i / 2 - 1
+                                } else {
+                                    self.size.0 - offset_r + i / 2
+                                }
+                            }
+                            TextAlign::Right => self.size.0 - old_line_width + i,
+                        };
+                        self.eraser.push((position, line_idx as u16));
+                    }
+                }
+            }
         }
 
         fn recompute_layout(&mut self) {
+            // TODO: = recompute_layout_from(0)
             let old_layout = self.layout.drain(..).collect::<Vec<u16>>();
             let mut line_width = 0;
             let mut line_start = 0;
+
+            if self.size.0 == 0 {
+                self.layout.clear();
+                return;
+            }
             
             self.line_breaks = self
                 .text
@@ -393,7 +446,7 @@ pub mod text {
 
                         while line_len >= self.size.0 {
                             line_len -= self.size.0;
-                            self.layout.push(line_len as u16);
+                            self.layout.push(self.size.0 as u16);
                         }
                         
                         self.layout.push(line_len as u16);
@@ -450,7 +503,7 @@ pub mod text {
                             }
                             TextAlign::Right => self.size.0 - old_line_width + i,
                         };
-                        self.eraser.push((position, line_idx as u16));
+                        self.eraser.push((position.min(self.size.0), (line_idx as u16).min(self.size.1) ));
                     }
                 }
             }
@@ -634,12 +687,7 @@ pub mod text {
                 return;
             }
 
-            let previous_storage_len = self.text_box.text.len();
-            let new_length = self.text_box.current_length - (end - start);
-            self.text_box.text.drain(start..end);
-            self.text_box.current_length = new_length;
-            self.text_box.text.resize(previous_storage_len, ' ');
-            self.text_box.recompute_layout();
+            self.text_box.remove_text(start, end);
 
             if self.cursor > end {
                 self.cursor -= end - start;
@@ -822,7 +870,8 @@ pub mod text {
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
-            if let crate::Event::Resize(..) = event {
+            if let crate::Event::Resize(x, y) = event {
+                self.size = (x, y);
                 self.recompute_layout();
             }
             if self.listener.is_listening_for(event.into()) {
@@ -848,7 +897,7 @@ pub mod text {
             let mut should_update = false;
 
             if let crate::Event::Resize(..) = event {
-                self.text_box.recompute_layout();
+                self.text_box.on_event(event, actions);
                 should_update = true;
             }
 
@@ -978,7 +1027,7 @@ mod factory_widgets_tests {
         let size = (8, 4);
         let mut output = TestOutput::<35, 4>::new();
         let mut text_box = WidgetBuilder::new(TextBox::new(
-            "rrrrrrrrr",
+            "ABC\nDEF",
             super::Listener::empty(),
             TextAlign::Left,
         ))
@@ -989,22 +1038,6 @@ mod factory_widgets_tests {
         edit.on_event(Event::Resize(35, 2), &mut ActionList::new());
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
-
-        // technically nothing changed sinc the widget has not been rendered yet
-        let chars = edit.get_chars(size).to_vec();
-        edit.set_text("ABC\nDEF");
-        let chars = edit.get_chars(size).to_vec();
-        assert_eq!(
-            chars,
-            vec![
-                (0, 0, 'A'),
-                (1, 0, 'B'),
-                (2, 0, 'C'),
-                (0, 1, 'D'),
-                (1, 1, 'E'),
-                (2, 1, 'F'),
-            ]
-        );
 
         let s1 = "AB\nCDEF";
         edit.set_text(s1);
@@ -1397,13 +1430,66 @@ mod factory_widgets_tests {
             .write()
             .unwrap()
             .set_align(factory_widgets::text::TextAlign::Right);
-        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
-        // println!()
-        todo!("Test with wrapping in all three alignment modes")
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (18, 12));
+        crate::test::assert_match_with_test_file(
+            &rendered_text,
+            "factory_widgets/short_text_letter_wrap_right_align.txt",
+        );
+
+        widget
+            .displayable
+            .write()
+            .unwrap()
+            .set_align(factory_widgets::text::TextAlign::Center);
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (18, 12));
+        crate::test::assert_match_with_test_file(
+            &rendered_text,
+            "factory_widgets/short_text_letter_wrap_centered.txt",
+        );
     }
 
     #[test]
     fn wrapping_word_text() {
+        let lorem = self::test::strings::lorem_ipsum_short()
+            .to_string()
+            .repeat(2);
+        let mut text_box = crate::factory_widgets::text::TextBox::new(
+            &lorem,
+            Listener::empty(),
+            factory_widgets::text::TextAlign::Left,
+        );
+        text_box.set_wrapping_mode(Wrapping::PerWord);
+        let widget = WidgetBuilder::new(text_box)
+            .with_outline(symbols::OutlineStyle::Thick)
+            .build();
+
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
+        crate::test::assert_match_with_test_file(
+            &rendered_text,
+            "factory_widgets/short_text_word_wrap.txt",
+        );
+
+        widget
+            .displayable
+            .write()
+            .unwrap()
+            .set_align(factory_widgets::text::TextAlign::Right);
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
+        crate::test::assert_match_with_test_file(
+            &rendered_text,
+            "factory_widgets/short_text_word_wrap_right_align.txt",
+        );
+
+        widget
+            .displayable
+            .write()
+            .unwrap()
+            .set_align(factory_widgets::text::TextAlign::Center);
+        let rendered_text = crate::test::get_single_widget_rendered_text(&widget, (16, 8));
+        crate::test::assert_match_with_test_file(
+            &rendered_text,
+            "factory_widgets/short_text_word_wrap_centered.txt",
+        );
         todo!("Test with wrapping in all three alignment modes")
     }
 
@@ -1425,7 +1511,7 @@ mod factory_widgets_tests {
         assert_eq!(input.text(), "ac");
         assert_eq!(
             input.get_chars((16, 1)).as_ref(),
-            &[(0, 0, 'a'), (1, 0, 'c'), (2, 0, ' '), (3, 0, ' ')]
+            &[(0, 0, 'a'), (1, 0, 'c'), (3, 0, ' '), (2, 0, ' ')]
         );
     }
 

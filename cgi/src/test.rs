@@ -130,8 +130,9 @@ mod inner {
         output.change_size((size.0 as usize, size.1 as usize));
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(widget, placement);
-
         let layout = layout.render(size.0, size.1);
+        let coords = layout.get_widget_coords(&widget.as_hdl(), true);
+        widget.edit().on_event(crate::Event::Resize(coords.width as _, coords.height as _), &mut ActionList::new());
         layout.full_render_to_output(&mut output);
 
         output.to_string()

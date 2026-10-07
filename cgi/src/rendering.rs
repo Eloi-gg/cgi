@@ -52,7 +52,7 @@ impl crate::layout::RenderedLayout {
         placement: &ComputedWidgetPlacement,
         output: &mut dyn Output,
     ) {
-        let layer = self.layer_mapping[widget];
+        let layer = self.widget_layer[widget];
         self.render_widget_to_output(widget, placement, false, layer, output);
         // TODO: single render means extra computation for transparent widgets above?
     }
