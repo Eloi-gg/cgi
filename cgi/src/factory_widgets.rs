@@ -291,6 +291,8 @@ pub mod text {
         }
         //start must be a character that HAS NOT changed
         fn recompute_layout_from(&mut self, start: usize) {
+            panic!("just to make sure we're not using this function rn");
+
             // TODO: = recompute_layout_from(0)
             if self.layout.is_empty() {
                 self.recompute_layout();
@@ -445,33 +447,32 @@ pub mod text {
                         let mut whitespaces = self.text[start..break_idx]
                             .iter()
                             .enumerate()
-                            .filter_map(|(i, c)| if c.is_whitespace() { Some(start + i) } else { None })
+                            .filter_map(|(i, c)| {
+                                if c.is_whitespace() {
+                                    Some(start + i)
+                                } else {
+                                    None
+                                }
+                            })
                             .collect::<Vec<_>>();
 
                         let mut is_last = false;
 
                         while start < break_idx {
-                            let last_whitespace =
-                                whitespaces.binary_search(&(self.size.0 as usize + start));
-
+                            let last_whitespace = Self::get_last_index_before_threshold(
+                                &whitespaces,
+                                self.size.0 as usize + start,
+                            );
                             let last_whitespace = match last_whitespace {
-                                Ok(idx) => whitespaces[idx],
-                                // idx is the position where target would be inserted
-                                // The number at idx-1 is the largest number less than target
-                                Err(idx) => {
-                                    // 0 => no match, everything is greater than target: cant fit,
-                                    if idx == 0 {
-                                        whitespaces[idx]
-                                    } else {
-                                        if idx == whitespaces.len() {
-                                            is_last = true;
-                                        }
-                                        whitespaces[idx - 1]
+                                Some(idx) => {
+                                    if idx == whitespaces.len() - 1 {
+                                        is_last = true;
                                     }
+                                    whitespaces[idx]
                                 }
+                                None => start,
                             };
-
-                            let line_len = last_whitespace.saturating_sub(start);
+                            let line_len = last_whitespace.saturating_sub(start) + 1;
                             layout.push(line_len as u16);
                             start = last_whitespace + 1;
 
@@ -488,6 +489,8 @@ pub mod text {
                     if layout.is_empty() || remaining > 0 {
                         layout.push(remaining as u16);
                     }
+
+                    self.layout = layout;
                 }
                 Wrapping::PerLetter => {
                     for break_idx in self.line_breaks.iter() {
@@ -561,6 +564,24 @@ pub mod text {
             }
         }
 
+        /// Returns the last index of the slice that is before the threshold
+        /// If every index is higher, returns None
+        /// If every index is lower, then the return value will be == indexes.len() - 1
+        fn get_last_index_before_threshold(indexes: &[usize], threshold: usize) -> Option<usize> {
+            let last_expected_idx = indexes.binary_search(&threshold);
+            match last_expected_idx {
+                Ok(idx) => Some(idx),
+                // idx is the position where target would be inserted
+                Err(idx) => {
+                    if idx == 0 {
+                        None
+                    } else {
+                        Some(idx - 1)
+                    }
+                }
+            }
+        }
+
         // TODO: every call to this function is quite expensive, precompute all text stuff before calling the function many times
         fn get_char_placement(&self, index: usize) -> Option<(u16, u16, char)> {
             if index >= self.text.len() || self.text[index] == '\n' {
@@ -583,20 +604,11 @@ pub mod text {
 
             match self.wrapping {
                 Wrapping::Off => {
-                    let expected_line = self
-                        .line_breaks
-                        .iter()
-                        .take_while(|&&break_point| break_point < index)
-                        .count();
-                    let last_break = self
-                        .line_breaks
-                        .iter()
-                        .take_while(|&&break_point| break_point < index)
-                        .last()
-                        .copied();
-                    let line_start = match last_break {
-                        Some(break_point) => break_point + 1,
-                        None => 0usize,
+                    let last_break_idx =
+                        Self::get_last_index_before_threshold(&self.line_breaks, index);
+                    let (expected_line, line_start) = match last_break_idx {
+                        Some(break_idx) => (break_idx + 1, self.line_breaks[break_idx] + 1),
+                        None => (0, 0),
                     };
                     let index_on_line = index.saturating_sub(line_start);
 
@@ -622,7 +634,21 @@ pub mod text {
                         character,
                     ));
                 }
-                Wrapping::PerWord => {}
+                Wrapping::PerWord => {
+                    for (line, &line_width) in self.layout.iter().enumerate() {
+                        let line_end = line_start + line_width;
+                        if visual_index < line_end {
+                            let x = visual_index - line_start;
+                            let offset = match self.align {
+                                TextAlign::Left => 0,
+                                TextAlign::Center => self.size.0.saturating_sub(line_width) / 2,
+                                TextAlign::Right => self.size.0.saturating_sub(line_width) + 1,
+                            };
+                            return Some((x + offset, line as u16, character));
+                        }
+                        line_start = line_end;
+                    }
+                }
                 Wrapping::PerLetter => {
                     for (line, &line_width) in self.layout.iter().enumerate() {
                         let line_end = line_start + line_width;
