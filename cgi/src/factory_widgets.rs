@@ -291,7 +291,7 @@ pub mod text {
         }
         //start must be a character that HAS NOT changed
         fn recompute_layout_from(&mut self, start: usize) {
-            panic!("just to make sure we're not using this function rn");
+            // panic!("just to make sure we're not using this function rn");
 
             // TODO: = recompute_layout_from(0)
             if self.layout.is_empty() {
@@ -472,7 +472,8 @@ pub mod text {
                                 }
                                 None => start,
                             };
-                            let line_len = last_whitespace.saturating_sub(start) + 1;
+                            
+                            let line_len = last_whitespace.saturating_sub(start);
                             layout.push(line_len as u16);
                             start = last_whitespace + 1;
 
@@ -636,13 +637,16 @@ pub mod text {
                 }
                 Wrapping::PerWord => {
                     for (line, &line_width) in self.layout.iter().enumerate() {
-                        let line_end = line_start + line_width;
+                        let mut line_end = line_start + line_width;
+                        while self.text[line_end as usize] == ' ' {
+                            line_end += 1;
+                        }
                         if visual_index < line_end {
                             let x = visual_index - line_start;
                             let offset = match self.align {
                                 TextAlign::Left => 0,
                                 TextAlign::Center => self.size.0.saturating_sub(line_width) / 2,
-                                TextAlign::Right => self.size.0.saturating_sub(line_width) + 1,
+                                TextAlign::Right => self.size.0.saturating_sub(line_width) ,
                             };
                             return Some((x + offset, line as u16, character));
                         }
@@ -921,7 +925,6 @@ pub mod text {
             }
 
             // To check if we are not erasing what we plan on rendering
-
             let mut eraser = if self.multiple_updates {
                 let lookup = chars
                     .iter()
@@ -1568,7 +1571,6 @@ mod factory_widgets_tests {
             &rendered_text,
             "factory_widgets/short_text_word_wrap_centered.txt",
         );
-        todo!("Test with wrapping in all three alignment modes")
     }
 
     #[test]
