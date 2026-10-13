@@ -289,20 +289,18 @@ pub mod text {
 
             diff
         }
-        //start must be a character that HAS NOT changed
-        fn recompute_layout_from(&mut self, start: usize) {
-            // panic!("just to make sure we're not using this function rn");
-
-            // TODO: = recompute_layout_from(0)
-            if self.layout.is_empty() {
-                self.recompute_layout();
-                return;
-            }
+        //start must be a character that HAS NOT changed or 0 for full recompute
+        fn recompute_layout_from(&mut self, start: usize) {            
             if self.size.0 == 0 {
                 return;
             }
 
-            let starting_place = self.get_char_placement(start).unwrap();
+            // If start == 0, full recompute
+            let starting_place = if start == 0 {
+                (0, 0, ' ')
+            } else {
+                self.get_char_placement(start).unwrap()
+            };
             let mut line_start = 0;
 
             let old_layout = self
@@ -335,7 +333,55 @@ pub mod text {
                     }
                 }
                 Wrapping::PerWord => {
-                    todo!()
+                    let mut start = starting_place.0 as usize;
+
+                    for &break_idx in new_line_breaks {
+                        let mut whitespaces = self.text[start..break_idx]
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, c)| {
+                                if c.is_whitespace() {
+                                    Some(start + i)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>();
+
+                        let mut is_last = false;
+
+                        while start < break_idx {
+                            let last_whitespace = Self::get_last_index_before_threshold(
+                                &whitespaces,
+                                self.size.0 as usize + start,
+                            );
+                            let last_whitespace = match last_whitespace {
+                                Some(idx) => {
+                                    if idx == whitespaces.len() - 1 {
+                                        is_last = true;
+                                    }
+                                    whitespaces[idx]
+                                }
+                                None => start,
+                            };
+
+                            let line_len = last_whitespace.saturating_sub(start);
+                            self.layout.push(line_len as u16);
+                            start = last_whitespace + 1;
+
+                            if is_last {
+                                let line_len = break_idx.saturating_sub(start);
+                                self.layout.push(line_len as u16);
+                                start = break_idx + 1;
+                                break;
+                            }
+                        }
+                    }
+
+                    let remaining = self.current_length.saturating_sub(start);
+                    if self.layout.is_empty() || remaining > 0 {
+                        self.layout.push(remaining as u16);
+                    }
                 }
                 Wrapping::PerLetter => {
                     for &break_idx in new_line_breaks {
@@ -353,25 +399,11 @@ pub mod text {
                     if remaining > 0 {
                         self.layout.push(remaining as u16);
                     }
-                    // // TODO: use the line_breaks to avoid recomputing
-                    // for &c in &self.text {
-                    //     if c == '\n' {
-                    //         self.layout.push(line_width);
-                    //         line_width = 0;
-                    //     } else {
-                    //         if line_width >= self.size.0 {
-                    //             self.layout.push(self.size.0);
-                    //             line_width = 0;
-                    //         }
-                    //         line_width += 1;
-                    //     }
-                    // }
-                    // if line_width > 0 || self.layout.is_empty() {
-                    //     self.layout.push(line_width);
-                    // }
                 }
             }
 
+
+            // Computing where we need to add ' ' characters to erase what was there before
             let layout_diff = self.layout_diff(&old_layout, &self.layout);
             for (line_idx, (line_diff, old_line_width)) in
                 layout_diff.iter().zip(old_layout.iter()).enumerate()
@@ -403,166 +435,7 @@ pub mod text {
         }
 
         fn recompute_layout(&mut self) {
-            // TODO: = recompute_layout_from(0)
-            let old_layout = self.layout.drain(..).collect::<Vec<u16>>();
-            let mut line_width = 0;
-            let mut line_start = 0;
-
-            if self.size.0 == 0 {
-                self.layout.clear();
-                return;
-            }
-
-            self.line_breaks = self
-                .text
-                .iter()
-                .take(self.current_length)
-                .enumerate()
-                .filter_map(|(i, c)| if *c == '\n' { Some(i) } else { None })
-                .collect();
-
-            match self.wrapping {
-                Wrapping::Off => {
-                    let mut layout = Vec::new();
-                    let mut start = 0usize;
-
-                    for &break_idx in &self.line_breaks {
-                        let line_len = break_idx.saturating_sub(start);
-                        layout.push(line_len as u16);
-                        start = break_idx + 1;
-                    }
-
-                    let remaining = self.current_length.saturating_sub(start);
-                    if layout.is_empty() || remaining > 0 {
-                        layout.push(remaining as u16);
-                    }
-
-                    self.layout = layout;
-                }
-                Wrapping::PerWord => {
-                    let mut layout = Vec::new();
-                    let mut start = 0usize;
-
-                    for &break_idx in &self.line_breaks {
-                        let mut whitespaces = self.text[start..break_idx]
-                            .iter()
-                            .enumerate()
-                            .filter_map(|(i, c)| {
-                                if c.is_whitespace() {
-                                    Some(start + i)
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<_>>();
-
-                        let mut is_last = false;
-
-                        while start < break_idx {
-                            let last_whitespace = Self::get_last_index_before_threshold(
-                                &whitespaces,
-                                self.size.0 as usize + start,
-                            );
-                            let last_whitespace = match last_whitespace {
-                                Some(idx) => {
-                                    if idx == whitespaces.len() - 1 {
-                                        is_last = true;
-                                    }
-                                    whitespaces[idx]
-                                }
-                                None => start,
-                            };
-                            
-                            let line_len = last_whitespace.saturating_sub(start);
-                            layout.push(line_len as u16);
-                            start = last_whitespace + 1;
-
-                            if is_last {
-                                let line_len = break_idx.saturating_sub(start);
-                                layout.push(line_len as u16);
-                                start = break_idx + 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    let remaining = self.current_length.saturating_sub(start);
-                    if layout.is_empty() || remaining > 0 {
-                        layout.push(remaining as u16);
-                    }
-
-                    self.layout = layout;
-                }
-                Wrapping::PerLetter => {
-                    for break_idx in self.line_breaks.iter() {
-                        let mut line_len = break_idx.saturating_sub(line_start) as u16;
-
-                        while line_len >= self.size.0 {
-                            line_len -= self.size.0;
-                            self.layout.push(self.size.0 as u16);
-                        }
-
-                        self.layout.push(line_len as u16);
-                        line_start = break_idx + 1;
-                    }
-                    let remaining = self.current_length.saturating_sub(line_start);
-                    if remaining > 0 {
-                        self.layout.push(remaining as u16);
-                    }
-                    //
-                    // if self.size.0 == 0 {
-                    //     return;
-                    // }
-                    // // TODO: use the line_breaks to avoid recomputing
-                    // for &c in &self.text {
-                    //     if c == '\n' {
-                    //         self.layout.push(line_width);
-                    //         line_width = 0;
-                    //     } else {
-                    //         if line_width >= self.size.0 {
-                    //             self.layout.push(self.size.0);
-                    //             line_width = 0;
-                    //         }
-                    //         line_width += 1;
-                    //     }
-                    // }
-                    // if line_width > 0 || self.layout.is_empty() {
-                    //     self.layout.push(line_width);
-                    // }
-                }
-            }
-
-            let layout_diff = self.layout_diff(&old_layout, &self.layout);
-            for (line_idx, (line_diff, old_line_width)) in
-                layout_diff.iter().zip(old_layout.iter()).enumerate()
-            {
-                // if line_diff is negative, then the line was longer before than after the layout change.
-                // we need to erase the characters that were there before the layout change
-                if *line_diff < 0 {
-                    let line_diff: u16 = (-line_diff) as u16;
-                    let old_line_width: u16 = (*old_line_width).min(self.size.0);
-                    for i in 0..line_diff {
-                        let position = match self.align {
-                            TextAlign::Left => old_line_width - i - 1,
-                            TextAlign::Center => {
-                                let new_line_width = *self.layout.get(line_idx).unwrap_or(&0);
-                                let offset_l = (self.size.0 - new_line_width) / 2;
-                                let offset_r = offset_l + (self.size.0 - new_line_width) % 2;
-                                if i % 2 == 0 {
-                                    offset_l - i / 2 - 1
-                                } else {
-                                    self.size.0 - offset_r + i / 2
-                                }
-                            }
-                            TextAlign::Right => self.size.0 - old_line_width + i,
-                        };
-                        self.eraser.push((
-                            position.min(self.size.0),
-                            (line_idx as u16).min(self.size.1),
-                        ));
-                    }
-                }
-            }
+            self.recompute_layout_from(0)
         }
 
         /// Returns the last index of the slice that is before the threshold
@@ -646,7 +519,7 @@ pub mod text {
                             let offset = match self.align {
                                 TextAlign::Left => 0,
                                 TextAlign::Center => self.size.0.saturating_sub(line_width) / 2,
-                                TextAlign::Right => self.size.0.saturating_sub(line_width) ,
+                                TextAlign::Right => self.size.0.saturating_sub(line_width),
                             };
                             return Some((x + offset, line as u16, character));
                         }
