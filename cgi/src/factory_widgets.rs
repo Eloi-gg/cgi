@@ -49,6 +49,7 @@ pub mod progression {
         amt: f32,
         listener: Listener<Self>,
         color: Option<crate::text_formatting::CombinedFormat>,
+        axis_len: u16,
     }
 
     impl ProgressBar {
@@ -58,6 +59,7 @@ pub mod progression {
                 amt,
                 listener,
                 color: None,
+                axis_len: 0,
             }
         }
 
@@ -69,8 +71,8 @@ pub mod progression {
             self.color = Some(crate::text_formatting::CombinedFormat::from(color));
         }
 
-        fn scaled_amt(&self, amt: f32, size: u16) -> f32 {
-            amt.clamp(0.0, 1.0) * size as f32
+        fn scaled_amt(&self) -> f32 {
+            self.amt.clamp(0.0, 1.0) * self.axis_len as f32
         }
 
         fn get_set(&self) -> crate::symbols::progress_bar::Set {
@@ -91,17 +93,16 @@ pub mod progression {
     }
 
     impl Displayable for ProgressBar {
-        fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
-            if size.0 * size.1 == 0 {
-                return std::borrow::Cow::Borrowed(&[]);
+        fn get_chars(&mut self) -> crate::CharContainer<'_> {
+            let mut r = crate::CharContainer::new_empty();
+            if let Some(color) = self.color {
+                r.set_format(color);
             }
-
-            let axis_len = if self.is_horizontal() { size.0 } else { size.1 };
-            let scaled = self.scaled_amt(self.amt, axis_len);
+            let scaled = self.scaled_amt();
             let filled = scaled.floor() as usize;
             let partial_fill = scaled.fract();
             let set = self.get_set();
-            let chars = (0..axis_len)
+            let chars = (0..self.axis_len)
                 .map(|i| {
                     let ch = if (i as usize) < filled {
                         set.full
@@ -117,17 +118,19 @@ pub mod progression {
                     }
                 })
                 .collect();
-            std::borrow::Cow::Owned(chars)
+            r.add_owned(chars);
+
+            r
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
+            if let crate::Event::Resize(x, y) = event {
+                self.axis_len = if self.is_horizontal() { x } else { y };
+            }
+
             if self.listener.is_listening_for(event.into()) {
                 (self.listener.on_event)(event, actions, self);
             }
-        }
-
-        fn get_style(&self) -> Option<crate::text_formatting::CombinedFormat> {
-            self.color.clone()
         }
     }
 }
@@ -290,7 +293,7 @@ pub mod text {
             diff
         }
         //start must be a character that HAS NOT changed or 0 for full recompute
-        fn recompute_layout_from(&mut self, start: usize) {            
+        fn recompute_layout_from(&mut self, start: usize) {
             if self.size.0 == 0 {
                 return;
             }
@@ -401,7 +404,6 @@ pub mod text {
                     }
                 }
             }
-
 
             // Computing where we need to add ' ' characters to erase what was there before
             let layout_diff = self.layout_diff(&old_layout, &self.layout);
@@ -759,13 +761,12 @@ pub mod text {
     }
 
     impl Displayable for TextBox {
-        fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
-            self.size = size;
+        fn get_chars(&mut self) -> crate::CharContainer<'_> {
             if self.layout.is_empty() {
                 self.recompute_layout();
             }
-            if size.0 * size.1 == 0 {
-                return std::borrow::Cow::Borrowed(&[]);
+            if self.size.0 * self.size.1 == 0 {
+                return crate::CharContainer::new_empty();
             }
 
             const NO_WRAPPING_POINTS: u16 = 3;
@@ -774,13 +775,13 @@ pub mod text {
             let mut chars = (0..self.current_length)
                 .filter_map(|i| self.get_char_placement(i))
                 .filter(|(x, y, _)| {
-                    if *x == size.0 {
+                    if *x == self.size.0 {
                         if *y < self.size.1 {
                             width_overflow_line_idx.push(*y);
                         }
                         false
                     } else {
-                        *x < size.0 && *y < size.1
+                        *x < self.size.0 && *y < self.size.1
                     }
                 })
                 .collect::<Vec<_>>();
@@ -791,8 +792,8 @@ pub mod text {
                     crate::log::log(&format!("s{} {:?}", self.size.1, &width_overflow_line_idx));
                 }
                 for y in width_overflow_line_idx {
-                    for i in 0..NO_WRAPPING_POINTS.min(size.0) {
-                        chars.push((size.0 - 1 - i, y, '.'));
+                    for i in 0..NO_WRAPPING_POINTS.min(self.size.0) {
+                        chars.push((self.size.0 - 1 - i, y, '.'));
                     }
                 }
             }
@@ -820,7 +821,7 @@ pub mod text {
 
             chars.append(&mut eraser);
 
-            std::borrow::Cow::Owned(chars)
+            crate::CharContainer::new_owned(chars)
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
@@ -832,19 +833,11 @@ pub mod text {
                 (self.listener.on_event)(event, actions, self);
             }
         }
-
-        fn get_style(&self) -> Option<crate::text_formatting::CombinedFormat> {
-            self.style.clone()
-        }
     }
 
     impl Displayable for TextInput {
-        fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
-            if size.0 * size.1 == 0 {
-                return std::borrow::Cow::Borrowed(&[]);
-            }
-            self.text_box.size = size;
-            self.text_box.get_chars(size)
+        fn get_chars(&mut self) -> crate::CharContainer<'_> {
+            self.text_box.get_chars()
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
@@ -911,14 +904,13 @@ pub mod text {
 }
 
 pub mod utils {
-    use crate::Displayable;
+    use crate::{CharContainer, Displayable};
 
     pub struct Empty;
 
     impl Displayable for Empty {
-        fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
-            let _ = size;
-            std::borrow::Cow::Owned(Vec::new())
+        fn get_chars(&mut self) -> crate::CharContainer<'_> {
+            CharContainer::new_empty()
         }
     }
 }
@@ -926,7 +918,7 @@ pub mod utils {
 #[cfg(test)]
 mod factory_widgets_tests {
     use super::text::*;
-    use crate::{WidgetBuilder, WidgetPlacement, factory_widgets::Listener, test::*, *};
+    use crate::{factory_widgets::Listener, test::*, *};
 
     #[test]
     fn adding_and_removing_text() {
@@ -937,7 +929,7 @@ mod factory_widgets_tests {
 
         text_box.append_char('4');
         text_box.append_text("567");
-        let chars = text_box.get_chars((16, 1)).into_owned();
+        let chars = text_box.get_chars().chars();
         assert_eq!(
             chars,
             (0..7)
@@ -947,7 +939,7 @@ mod factory_widgets_tests {
         );
 
         text_box.set_text("1234");
-        let chars = text_box.get_chars((16, 1)).into_owned();
+        let chars = text_box.get_chars().chars();
         assert_eq!(
             chars,
             vec![
@@ -962,7 +954,7 @@ mod factory_widgets_tests {
         );
 
         text_box.append_text("56");
-        let chars = text_box.get_chars((16, 1)).into_owned();
+        let chars = text_box.get_chars().chars();
         assert_eq!(
             chars,
             vec![
@@ -989,13 +981,13 @@ mod factory_widgets_tests {
 
         let mut edit = text_box.edit();
         edit.set_wrapping_mode(Wrapping::Off);
-        edit.on_event(Event::Resize(35, 2), &mut ActionList::new());
+        edit.on_event(Event::Resize(size.0, size.1), &mut ActionList::new());
         let placement = WidgetPlacement::fullscreen();
         let layout = Layout::new().with_widget(&text_box, placement);
 
         let s1 = "AB\nCDEF";
         edit.set_text(s1);
-        let chars = edit.get_chars(size).to_vec();
+        let chars = edit.get_chars().chars();
         assert_eq!(
             chars,
             vec![
@@ -1009,7 +1001,7 @@ mod factory_widgets_tests {
             ]
         );
         edit.set_text("ABCX123\nDEF");
-        let chars = edit.get_chars(size).to_vec();
+        let chars = edit.get_chars().chars();
         assert_eq!(
             chars,
             vec![
@@ -1027,7 +1019,7 @@ mod factory_widgets_tests {
             ]
         );
         edit.set_text(s1);
-        let chars = edit.get_chars(size).to_vec();
+        let chars = edit.get_chars().chars();
         assert_eq!(
             chars,
             vec![
@@ -1045,7 +1037,7 @@ mod factory_widgets_tests {
             ]
         );
         edit.set_text(&("\n".to_owned() + s1));
-        let chars = edit.get_chars(size).to_vec();
+        let chars = edit.get_chars().chars();
         assert_eq!(
             chars,
             vec![
@@ -1063,7 +1055,7 @@ mod factory_widgets_tests {
         );
         edit.set_text("");
 
-        let chars = edit.get_chars(size).to_vec();
+        let chars = edit.get_chars().chars();
         assert_eq!(
             chars,
             vec![
@@ -1083,7 +1075,7 @@ mod factory_widgets_tests {
         edit.set_text(&ms);
         ms = "dd\n".to_owned() + &ms;
         edit.set_text(&ms);
-        let mut chars = edit.get_chars(size).to_vec();
+        let mut chars = edit.get_chars().chars();
         chars.sort();
         chars.dedup();
 
@@ -1111,10 +1103,10 @@ mod factory_widgets_tests {
 
         // RIGHT ALIGN
         edit.set_text("");
-        let _ = edit.get_chars(size).to_vec();
+        let _ = edit.get_chars().chars();
         edit.set_align(TextAlign::Right);
         edit.set_text("ABC\nDEF");
-        let chars = edit.get_chars(size).to_vec();
+        let chars = edit.get_chars().chars();
         assert_eq!(
             chars,
             vec![
@@ -1129,7 +1121,7 @@ mod factory_widgets_tests {
 
         let s1 = "AB\nCDEF";
         edit.set_text(s1);
-        let chars = edit.get_chars(size).to_vec();
+        let chars = edit.get_chars().chars();
         assert_eq!(
             chars,
             vec![
@@ -1145,10 +1137,10 @@ mod factory_widgets_tests {
 
         // CENTER ALIGN
         edit.set_text("");
-        let _ = edit.get_chars(size).to_vec();
+        let _ = edit.get_chars().chars();
         edit.set_align(TextAlign::Center);
         edit.set_text("ABC\nDEF");
-        let chars = edit.get_chars(size).to_vec();
+        let chars = edit.get_chars().chars();
         assert_eq!(
             chars,
             vec![
@@ -1163,7 +1155,7 @@ mod factory_widgets_tests {
 
         let s1 = "AB\nCDEF";
         edit.set_text(s1);
-        let chars = edit.get_chars(size).to_vec();
+        let chars = edit.get_chars().chars();
         assert_eq!(
             chars,
             vec![
@@ -1463,7 +1455,7 @@ mod factory_widgets_tests {
         input.on_event(Event::KeyPress(crate::KeyCode::Delete), &mut actions);
         assert_eq!(input.text(), "ac");
         assert_eq!(
-            input.get_chars((16, 1)).as_ref(),
+            input.get_chars().chars(),
             &[(0, 0, 'a'), (1, 0, 'c'), (3, 0, ' '), (2, 0, ' ')]
         );
     }
@@ -1475,7 +1467,9 @@ mod factory_widgets_tests {
             0.625,
             Listener::empty(),
         );
-        let out = bar.get_chars((4, 1)).into_owned();
+        let mut actions = ActionList::new();
+        bar.on_event(Event::Resize(4, 1), &mut actions);
+        let out = bar.get_chars().chars();
         assert_eq!(
             out,
             vec![(0, 0, '█'), (1, 0, '█'), (2, 0, '▌'), (3, 0, ' ')],
@@ -1483,7 +1477,7 @@ mod factory_widgets_tests {
         );
         bar.set_amt(0.0);
         assert_eq!(
-            bar.get_chars((4, 1)).as_ref(),
+            bar.get_chars().chars(),
             &[(0, 0, ' '), (1, 0, ' '), (2, 0, ' '), (3, 0, ' ')]
         );
 
@@ -1492,7 +1486,8 @@ mod factory_widgets_tests {
             0.75,
             Listener::empty(),
         );
-        let out = vertical.get_chars((1, 4)).into_owned();
+        vertical.on_event(Event::Resize(1, 4), &mut actions);
+        let out = vertical.get_chars().chars();
         assert_eq!(
             out,
             vec![(0, 0, '█'), (0, 1, '█'), (0, 2, '█'), (0, 3, ' ')],
@@ -1538,4 +1533,9 @@ mod factory_widgets_tests {
         println!("{}", rendered_text);
         assert_match_with_test_file(&rendered_text, "factory_widgets/cells_divided_tb");
     }
+
+    // #[test]
+    // fn board() {
+    //     todo!()
+    // }
 }

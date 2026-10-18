@@ -31,6 +31,80 @@ impl OS {
     }
 }
 
+/// Struct used to return the characters that will be printed to the screen
+/// Can own the data or borrow it
+pub struct CharContainer<'a> {
+    chars: Vec<Cow<'a, [(u16, u16, char)]>>,
+    formats: Vec<crate::text_formatting::CombinedFormat>,
+    current_format: crate::text_formatting::CombinedFormat,
+}
+
+impl<'a> CharContainer<'a> {
+    pub fn new_empty() -> Self {
+        Self {
+            chars: Vec::new(),
+            formats: Vec::new(),
+            current_format: crate::text_formatting::CombinedFormat::default(),
+        }
+    }
+
+    pub fn new_owned(chars: Vec<(u16, u16, char)>) -> Self {
+        Self {
+            chars: vec![Cow::Owned(chars)],
+            formats: vec![crate::text_formatting::CombinedFormat::default()],
+            current_format: crate::text_formatting::CombinedFormat::default(),
+        }
+    }
+
+    pub fn new_borrowed(chars: &'a [(u16, u16, char)]) -> Self {
+        Self {
+            chars: vec![Cow::Borrowed(chars)],
+            formats: vec![crate::text_formatting::CombinedFormat::default()],
+            current_format: crate::text_formatting::CombinedFormat::default(),
+        }
+    }
+
+    pub fn add_owned(&mut self, other: Vec<(u16, u16, char)>) {
+        self.chars.push(Cow::Owned(other));
+        self.formats.push(self.current_format);
+    }
+
+    pub fn add_borrowed(&mut self, other: &'a [(u16, u16, char)]) {
+        self.chars.push(Cow::Borrowed(other));
+        self.formats.push(self.current_format);
+    }
+
+    pub fn set_format(&mut self, format: crate::text_formatting::CombinedFormat) {
+        self.current_format = format;
+    }
+
+    pub(crate) fn chars(&self) -> Vec<(u16, u16, char)> {
+        self.chars
+            .iter()
+            .flat_map(|it| it.iter())
+            .cloned()
+            .collect()
+    }
+}
+
+impl<'a> IntoIterator for CharContainer<'a> {
+    type Item = (
+        Cow<'a, [(u16, u16, char)]>,
+        crate::text_formatting::CombinedFormat,
+    );
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let items: Vec<Self::Item> = self
+            .chars
+            .into_iter()
+            .zip(self.formats.into_iter())
+            .map(|(chars, format)| (chars, format))
+            .collect();
+        items.into_iter()
+    }
+}
+
 pub(crate) trait Output {
     fn flush(&mut self);
     fn place_char(&mut self, x: u16, y: u16, ch: char);
@@ -65,7 +139,6 @@ impl crate::layout::RenderedLayout {
         layer: usize,
         output: &mut dyn Output,
     ) {
-        
         // Outline
         let mut outline_buffer = Vec::new();
         let (has_outline, is_transparent) = {
@@ -99,19 +172,18 @@ impl crate::layout::RenderedLayout {
 
         // Content
         let mut lock = widget.widget.displayable.write().unwrap();
-        let style = lock.get_style();
-        let chars = lock.get_chars((placement.width as u16, placement.height as u16));
-        if let Some(style) = style {
-            style.apply();
+        let chars = lock.get_chars();
+
+        for (char_set, format) in chars.into_iter() {
+            format.apply();
+
+            for (x, y, c) in char_set.iter().filter(|(x, y, c)| {
+                self.masks[layer].at(placement.x as u16 + x, placement.y as u16 + y)
+                    && !(is_transparent && *c == ' ')
+            }) {
+                output.place_char(x + placement.x as u16, y + placement.y as u16, *c);
+            }
         }
-        
-        for (x, y, c) in chars.iter().filter(|(x, y, c)| {
-            self.masks[layer].at(placement.x as u16 + x, placement.y as u16 + y)
-                && !(is_transparent && *c == ' ')
-        }) {
-            output.place_char(x + placement.x as u16, y + placement.y as u16, *c);
-        }
-        crate::text_formatting::CombinedFormat::reset_global();
     }
 
     fn get_widget_outline_chars(

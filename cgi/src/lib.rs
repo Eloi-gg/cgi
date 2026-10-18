@@ -19,6 +19,7 @@ pub use crossterm::event::KeyCode;
 pub use layout::Layout;
 pub use layout::WidgetPlacement;
 pub use widget::{Widget, WidgetBuilder};
+pub use rendering::CharContainer;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Event {
@@ -148,13 +149,10 @@ pub trait Displayable: Send + Sync {
         let _ = event;
         let _ = actions;
     }
-    fn get_style(&self) -> Option<crate::text_formatting::CombinedFormat> {
-        None
-    }
 
     /// Returns all visible characters as `(column, line, char)` tuples.
     /// The coordinates are relative to the widget. (0,0) is the top-left corner.
     ///
     /// Implementations may return either a borrowed slice or an owned Vec wrapped in a Cow.
-    fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]>;
+    fn get_chars(&mut self) -> crate::CharContainer<'_>;
 }

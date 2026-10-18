@@ -3,6 +3,16 @@ use crossterm::{
 };
 use std::ops::BitOr;
 
+#[derive(Default, Copy, Clone, PartialEq)]
+pub struct CombinedFormat {
+    foreground: Option<Color>,
+    background: Option<Color>, // TODO: implement
+    bold: u8,      // 0 = not specified, 1 = bold, 2 = not bold
+    underline: u8, // 0 = not specified, 1 = underline, 2 = not underline
+    italic: u8,    // 0 = not specified, 1 = italic, 2 = not italic
+    dim: u8,       // 0 = not specified, 1 = dim, 2 = not dim
+}
+
 #[derive(Clone, Copy)]
 pub enum Format {
     Attribute(Attribute),
@@ -41,17 +51,6 @@ pub mod colors {
     pub static DARKCYAN: Format = Format::Color(Color::DarkCyan);
     pub static WHITE: Format = Format::Color(Color::White);
     pub static GREY: Format = Format::Color(Color::Grey);
-}
-
-#[derive(Default, Copy, Clone, PartialEq)]
-pub struct CombinedFormat {
-    foreground: Option<Color>,
-    background: Option<Color>, // TODO: implement
-    bold: u8,      // 0 = not specified, 1 = bold, 2 = not bold
-    underline: u8, // 0 = not specified, 1 = underline, 2 = not underline
-    italic: u8,    // 0 = not specified, 1 = italic, 2 = not italic
-    dim: u8,       // 0 = not specified, 1 = dim, 2 = not dim
-    
 }
 
 impl Format {

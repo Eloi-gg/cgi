@@ -7,8 +7,8 @@ struct CustomWidget {
 }
 
 impl Displayable for CustomWidget {
-    fn get_chars(&mut self, _size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
-        std::borrow::Cow::Borrowed(&[])
+    fn get_chars(&mut self) -> crate::CharContainer<'_> {
+        crate::CharContainer::new_empty()
     }
 
     fn on_event(&mut self, event: cgi::Event, actions: &mut cgi::ActionList) {

@@ -14,27 +14,31 @@ mod inner {
     /// Useful for testing rendering and layout.
     pub struct FillWidget {
         pub ch: char,
+        pub size: (u16, u16),
     }
 
     impl Displayable for FillWidget {
-        fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&mut self) -> crate::CharContainer<'_> {
             let ch = self.ch;
-            std::borrow::Cow::Owned(
-                (0..size.1)
-                    .flat_map(|y| (0..size.0).map(move |x| (x, y, ch)))
+            crate::CharContainer::new_owned(
+                (0..self.size.1)
+                    .flat_map(|y| (0..self.size.0).map(move |x| (x, y, ch)))
                     .collect(),
             )
         }
 
         fn on_event(&mut self, event: Event, actions: &mut crate::ActionList) {
-            // No-op for testing
+            if let Event::Resize(x, y) = event {
+                self.size = (x, y);
+            }
+            let _ = actions;
         }
     }
 
     impl FillWidget {
         /// Creates a new FillWidget with the given character
         pub fn new(ch: char) -> Self {
-            Self { ch }
+            Self { ch, size: (0, 0) }
         }
     }
 
@@ -74,9 +78,9 @@ mod inner {
     }
 
     impl Displayable for Dummy {
-        fn get_chars(&mut self, _size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        fn get_chars(&mut self) -> crate::CharContainer<'_> {
             // No-op for testing
-            return std::borrow::Cow::Borrowed(&[]);
+            return crate::CharContainer::new_empty();
         }
 
         fn on_event(&mut self, _event: Event, actions: &mut crate::ActionList) {
@@ -132,7 +136,10 @@ mod inner {
         let layout = Layout::new().with_widget(widget, placement);
         let layout = layout.render(size.0, size.1);
         let coords = layout.get_widget_coords(&widget.as_hdl(), true);
-        widget.edit().on_event(crate::Event::Resize(coords.width as _, coords.height as _), &mut ActionList::new());
+        widget.edit().on_event(
+            crate::Event::Resize(coords.width as _, coords.height as _),
+            &mut ActionList::new(),
+        );
         layout.full_render_to_output(&mut output);
 
         output.to_string()
