@@ -903,6 +903,318 @@ pub mod text {
     }
 }
 
+pub mod table {
+    use std::ops::Index;
+
+    use super::*;
+    pub trait Cell: Send + Sync {
+        fn get_width(&self) -> u16;
+    }
+    pub trait ColumnType: Send + Sync {}
+
+    pub enum StandardCell {
+        Text {
+            text: String,
+            format: crate::text_formatting::CombinedFormat,
+        },
+        Integer {
+            value: i32,
+            as_str: String,
+            format: crate::text_formatting::CombinedFormat,
+        },
+        Float {
+            value: f32,
+            min_precision: u8,
+            max_precision: u8,
+            as_str: String,
+            format: crate::text_formatting::CombinedFormat,
+        },
+        Boolean {
+            value: bool,
+            format: crate::text_formatting::CombinedFormat,
+        },
+        ProgressBar {
+            bar: progression::ProgressBar,
+        },
+    }
+    pub enum StandardColumnType {
+        Text {
+            align: text::TextAlign,
+        },
+        Number {
+            align: text::TextAlign,
+        },
+        Boolean {
+            align: text::TextAlign,
+        },
+        ProgressBar {
+            bar_type: progression::ProgressBarType,
+        },
+    }
+
+    impl StandardColumnType {
+        pub fn new_text(align: text::TextAlign) -> Self {
+            StandardColumnType::Text { align }
+        }
+
+        pub fn new_number(align: text::TextAlign) -> Self {
+            StandardColumnType::Number { align }
+        }
+
+        pub fn new_boolean(align: text::TextAlign) -> Self {
+            StandardColumnType::Boolean { align }
+        }
+
+        pub fn new_progress_bar(bar_type: progression::ProgressBarType) -> Self {
+            StandardColumnType::ProgressBar { bar_type }
+        }
+    }
+
+    impl Cell for StandardCell {
+        fn get_width(&self) -> u16 {
+            let w = match self {
+                StandardCell::Text { text, format } => text.len(),
+                StandardCell::Integer {
+                    value,
+                    format,
+                    as_str,
+                } => as_str.len(),
+                StandardCell::Float {
+                    value,
+                    min_precision,
+                    max_precision,
+                    as_str,
+                    format,
+                } => as_str.len(),
+                StandardCell::Boolean { value, format } => value.to_string().len(),
+                StandardCell::ProgressBar { bar } => 0, // 0 means fill width
+            };
+
+            w as u16
+        }
+    }
+    impl ColumnType for StandardColumnType {}
+
+    pub struct Row<C: Cell> {
+        cells: Vec<C>,
+        sizes: Vec<(u16, u16)>, // min, max. If all 0: adaptative size
+    }
+
+    pub struct Table<T: ColumnType, C: Cell> {
+        titles: Vec<String>,
+        columns: Vec<T>,
+        column_widths: Vec<ColumnWidth>,
+        rows: Vec<Row<C>>,
+        computed_widths: Vec<u16>,
+        max_rows: u16,
+    }
+
+    pub type StandardTable = Table<StandardColumnType, StandardCell>;
+    pub use builder::TableBuilder;
+
+    pub enum ColumnWidth {
+        Fixed(u16),
+        FixedRelative(f32),
+        Growable(u16, u16), // min, max
+        Adaptative {
+            min: u16,
+            max: u16,
+            offset: u16, // offset from the longest cell in the column
+        },
+    }
+
+    impl<C: Cell> Index<usize> for Row<C> {
+        type Output = C;
+
+        fn index(&self, index: usize) -> &Self::Output {
+            &self.cells[index]
+        }
+    }
+
+    impl<T: ColumnType, C: Cell> Displayable for Table<T, C> {
+        fn get_chars(&mut self) -> crate::CharContainer<'_> {
+            crate::CharContainer::new_empty()
+        }
+
+        fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
+            if let crate::Event::Resize(x, y) = event {
+                self.compute_column_widths(x);
+                self.max_rows = y - 1;
+            }
+        }
+    }
+
+    impl<T: ColumnType, C: Cell> Table<T, C> {
+        fn new() -> Self {
+            Self {
+                titles: vec![],
+                columns: vec![],
+                column_widths: vec![],
+                rows: vec![],
+                computed_widths: vec![],
+                max_rows: 0,
+            }
+        }
+
+        fn compute_column_widths(&mut self, available_width: u16) {
+            let mut adaptative_sizes = vec![0; self.column_widths.len()];
+            for (i, _width) in self
+                .column_widths
+                .iter()
+                .enumerate()
+                .filter(|(_i, e)| match e {
+                    ColumnWidth::Adaptative { .. } => true,
+                    _ => false,
+                })
+            {
+                let max_len = self.rows.iter().map(|e| e[i].get_width()).max().unwrap_or(0);
+                let max_len = max_len.max(self.titles[i].len() as u16);
+                assert!(
+                    max_len > 0,
+                    "0 len detected. 0 means the cell will use as many chars as possible, and is incompatible to a column set to adaptative width. Please use a Growable column instead."
+                );
+                let ColumnWidth::Adaptative { min, max, offset } = self.column_widths[i] else {
+                    unreachable!()
+                };
+                adaptative_sizes[i] = max_len.clamp(min, max) + offset;
+            }
+
+            let mut growable_indexes = vec![];
+            let total_fixed_width = self
+                .column_widths
+                .iter()
+                .enumerate()
+                .fold(0, |acc, (i, e)| {
+                    acc + match e {
+                        ColumnWidth::Fixed(w) => *w,
+                        ColumnWidth::FixedRelative(r) => (available_width as f32 * *r) as u16,
+                        ColumnWidth::Growable(min, max) => {
+                            growable_indexes.push(i);
+                            *min
+                        }
+                        ColumnWidth::Adaptative { .. } => adaptative_sizes[i],
+                    }
+                });
+
+            let mut growable_sizes = vec![0; growable_indexes.len()];
+            let mut remaining_space = available_width.saturating_sub(total_fixed_width);
+            let mut growable_count = growable_indexes.len() as u16;
+
+            if growable_count != 0 {
+                let mut filled_a_column = false;
+                while remaining_space > 0 {
+                    let growable_added_width = remaining_space / growable_count;
+                    let mut extra_spaces = remaining_space % growable_count;
+
+                    for &i in &growable_indexes {
+                        let ColumnWidth::Growable(min, max) = self.column_widths[i] else {
+                            unreachable!()
+                        };
+                        let current_width = min + growable_added_width;
+                        if current_width >= max {
+                            growable_sizes[i] = max;
+                            remaining_space = remaining_space.saturating_sub(max);
+                            filled_a_column = true;
+                            growable_count -= 1;
+                            break;
+                        }
+                    }
+
+                    if !filled_a_column {
+                        for &i in &growable_indexes {
+                            let ColumnWidth::Growable(min, max) = self.column_widths[i] else {
+                                unreachable!()
+                            };
+                            let mut current_width = min + growable_added_width;
+                            if extra_spaces > 0 && current_width < max {
+                                current_width += 1;
+                                extra_spaces -= 1;
+                            }
+                            growable_sizes[i] = current_width;
+                        }
+
+                        break;
+                    }
+                }
+            }
+
+            self.computed_widths.clear();
+            for (i, width) in self.column_widths.iter().enumerate() {
+                let computed_width = match width {
+                    ColumnWidth::Fixed(w) => *w,
+                    ColumnWidth::FixedRelative(r) => (available_width as f32 * *r) as u16,
+                    ColumnWidth::Growable(..) => growable_sizes[i],
+                    ColumnWidth::Adaptative { .. } => adaptative_sizes[i],
+                };
+                self.computed_widths.push(computed_width);
+            }
+        }
+    }
+
+    mod builder {
+        use super::*;
+
+        pub struct New;
+        pub struct TypeSelected;
+
+        //TODO constraint T: ColumnType, C: Cell
+        pub struct TableBuilder<T: ColumnType, C: Cell, S> {
+            table: Table<T, C>,
+            _state: S,
+        }
+
+        impl TableBuilder<StandardColumnType, StandardCell, New> {
+            pub fn new_standard() -> TableBuilder<StandardColumnType, StandardCell, TypeSelected> {
+                TableBuilder {
+                    table: Table::new(),
+                    _state: TypeSelected,
+                }
+            }
+        }
+
+        impl<T: ColumnType, C: Cell> TableBuilder<T, C, New> {
+            pub fn new_custom() -> TableBuilder<T, C, TypeSelected> {
+                TableBuilder {
+                    table: Table::new(),
+                    _state: TypeSelected,
+                }
+            }
+        }
+
+        impl<T: ColumnType, C: Cell> TableBuilder<T, C, TypeSelected> {
+            pub fn with_column(
+                mut self,
+                column_type: T,
+                column_width: ColumnWidth,
+                name: &str,
+            ) -> Self {
+                self.table.columns.push(column_type);
+                self.table.column_widths.push(column_width);
+                self.table.titles.push(name.to_string());
+                self
+            }
+
+            pub fn with_columns(mut self, columns: Vec<(T, ColumnWidth, &str)>) -> Self {
+                for (column_type, width, name) in columns {
+                    self = self.with_column(column_type, width, name);
+                }
+                self
+            }
+
+            pub fn with_n_rows(mut self, n: usize) -> Self {
+                for _ in 0..n {
+                    // Add empty row to table
+                }
+                self
+            }
+
+            pub fn build(self) -> Table<T, C> {
+                self.table
+            }
+        }
+    }
+}
+
 pub mod utils {
     use crate::{CharContainer, Displayable};
 
@@ -1534,8 +1846,46 @@ mod factory_widgets_tests {
         assert_match_with_test_file(&rendered_text, "factory_widgets/cells_divided_tb");
     }
 
-    // #[test]
-    // fn board() {
-    //     todo!()
-    // }
+    #[test]
+    fn board() {
+        use crate::factory_widgets::table::*;
+
+        let mut table = TableBuilder::new_standard()
+            .with_column(
+                StandardColumnType::new_text(TextAlign::Center),
+                ColumnWidth::Fixed(5),
+                "PID",
+            )
+            .with_column(
+                StandardColumnType::new_number(TextAlign::Center),
+                ColumnWidth::Adaptative {
+                    min: 1,
+                    max: 10,
+                    offset: 2,
+                },
+                "",
+            )
+            .with_column(
+                StandardColumnType::new_text(TextAlign::Center),
+                ColumnWidth::Fixed(5),
+                "Status",
+            )
+            .with_column(
+                StandardColumnType::new_progress_bar(
+                    factory_widgets::progression::ProgressBarType::HorizontalNineLevels,
+                ),
+                ColumnWidth::Growable(5, 50),
+                "Progress",
+            )
+            .build();
+        table.on_event(Event::Resize(40, 10), &mut ActionList::new());
+        let mut output = TestOutput::<40, 10>::new();
+        let layout = Layout::new()
+            .with_widget(&Widget::new(table), WidgetPlacement::fullscreen())
+            .render(40, 10);
+
+        layout.full_render_to_output(&mut output);
+        let rendered_text = output.to_string();
+        println!("{}", rendered_text);
+    }
 }
