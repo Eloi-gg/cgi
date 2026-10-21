@@ -1,5 +1,19 @@
 use crate::{Displayable, EventType};
 
+/// Simply calls set_cell for every argument you give
+/// use: `set_row(table, row, [value0, value1, ...])
+macro_rules! set_row {
+    ($table:expr, $row:expr, [$($value:expr),* $(,)?]) => {{
+        let table = &mut $table;
+        let row: usize = $row;
+        let mut col = 0;
+        $(
+            table.set_cell(col, row, $value);
+            col += 1;
+        )*
+    }};
+}
+
 #[derive(Clone)]
 pub struct Listener<T: ?Sized> {
     events: std::collections::HashSet<EventType>,
@@ -37,6 +51,7 @@ pub mod progression {
     use super::*;
     use crate::symbols::progress_bar::{bar, block};
 
+    #[derive(Clone, Copy)]
     pub enum ProgressBarType {
         HorizontalNineLevels,
         HorizontalThreeLevels,
@@ -136,7 +151,7 @@ pub mod progression {
 }
 
 pub mod text {
-    use std::collections::{BTreeMap, HashSet};
+    use std::collections::HashSet;
 
     use crate::CursorMove;
 
@@ -339,7 +354,7 @@ pub mod text {
                     let mut start = starting_place.0 as usize;
 
                     for &break_idx in new_line_breaks {
-                        let mut whitespaces = self.text[start..break_idx]
+                        let whitespaces = self.text[start..break_idx]
                             .iter()
                             .enumerate()
                             .filter_map(|(i, c)| {
@@ -904,39 +919,53 @@ pub mod text {
 }
 
 pub mod table {
-    use std::ops::Index;
-
     use super::*;
-    pub trait Cell: Send + Sync {
+    pub trait Cell: Send + Sync + Clone {
         fn get_width(&self) -> u16;
+        fn get_chars(&self, buffer: &mut Vec<char>);
     }
-    pub trait ColumnType: Send + Sync {}
 
-    pub enum StandardCell {
+    pub trait ColumnType: Send + Sync + Clone {
+        type CellType: Cell;
+
+        fn default_cell(&self) -> Self::CellType;
+    }
+
+    /// Used to modify the content of a cell, given a value
+    /// The behaviour can change depending on the column type
+    /// For example, a float could change the value of a Cell of type float, or
+    /// it could change the amount of a progress bar.
+    pub trait IntoCell<C: ColumnType> {
+        fn into_cell(&self, column: &C, cell: &mut C::CellType);
+    }
+
+    #[derive(Clone)]
+    enum StandardCellEnum {
         Text {
             text: String,
-            format: crate::text_formatting::CombinedFormat,
         },
         Integer {
             value: i32,
             as_str: String,
-            format: crate::text_formatting::CombinedFormat,
         },
         Float {
             value: f32,
             min_precision: u8,
             max_precision: u8,
             as_str: String,
-            format: crate::text_formatting::CombinedFormat,
         },
         Boolean {
             value: bool,
-            format: crate::text_formatting::CombinedFormat,
         },
         ProgressBar {
-            bar: progression::ProgressBar,
+            amt: f32,
         },
     }
+
+    #[derive(Clone)]
+    pub struct StandardCell(StandardCellEnum);
+
+    #[derive(Clone)]
     pub enum StandardColumnType {
         Text {
             align: text::TextAlign,
@@ -970,48 +999,206 @@ pub mod table {
         }
     }
 
+    impl IntoCell<StandardColumnType> for f32 {
+        fn into_cell(
+            &self,
+            column: &StandardColumnType,
+            cell: &mut <StandardColumnType as ColumnType>::CellType,
+        ) {
+            if let (StandardColumnType::ProgressBar { .. }, StandardCellEnum::ProgressBar { amt }) =
+                (column, &mut cell.0)
+            {
+                *amt = *self;
+            } else if let (
+                StandardColumnType::Number { .. },
+                StandardCellEnum::Float { value, as_str, .. },
+            ) = (column, &mut cell.0)
+            {
+                *value = *self;
+                *as_str = self.to_string();
+            }
+        }
+    }
+
+    impl IntoCell<StandardColumnType> for i32 {
+        fn into_cell(
+            &self,
+            column: &StandardColumnType,
+            cell: &mut <StandardColumnType as ColumnType>::CellType,
+        ) {
+            if let (
+                StandardColumnType::Number { .. },
+                StandardCellEnum::Integer { value, as_str },
+            ) = (column, &mut cell.0)
+            {
+                *value = *self;
+                *as_str = self.to_string();
+            }
+        }
+    }
+
+    impl IntoCell<StandardColumnType> for &str {
+        fn into_cell(
+            &self,
+            column: &StandardColumnType,
+            cell: &mut <StandardColumnType as ColumnType>::CellType,
+        ) {
+            if let (StandardColumnType::Text { .. }, StandardCellEnum::Text { text }) =
+                (column, &mut cell.0)
+            {
+                *text = (*self).to_owned();
+            }
+        }
+    }
+
+    impl IntoCell<StandardColumnType> for bool {
+        fn into_cell(
+            &self,
+            column: &StandardColumnType,
+            cell: &mut <StandardColumnType as ColumnType>::CellType,
+        ) {
+            if let (StandardColumnType::Boolean { .. }, StandardCellEnum::Boolean { value }) =
+                (column, &mut cell.0)
+            {
+                *value = *self;
+            }
+        }
+    }
+
+    impl StandardCell {
+        pub fn new_text(text: String) -> Self {
+            Self(StandardCellEnum::Text { text })
+        }
+
+        pub fn new_integer(value: i32) -> Self {
+            Self(StandardCellEnum::Integer {
+                value,
+                as_str: value.to_string(),
+            })
+        }
+
+        pub fn new_float(value: f32, min_precision: u8, max_precision: u8) -> Self {
+            let as_str = format!("{:.*}", max_precision as usize, value);
+            Self(StandardCellEnum::Float {
+                value,
+                min_precision,
+                max_precision,
+                as_str,
+            })
+        }
+
+        pub fn new_boolean(value: bool) -> Self {
+            Self(StandardCellEnum::Boolean { value })
+        }
+    }
+
     impl Cell for StandardCell {
         fn get_width(&self) -> u16 {
-            let w = match self {
-                StandardCell::Text { text, format } => text.len(),
-                StandardCell::Integer {
-                    value,
-                    format,
-                    as_str,
-                } => as_str.len(),
-                StandardCell::Float {
-                    value,
-                    min_precision,
-                    max_precision,
-                    as_str,
-                    format,
-                } => as_str.len(),
-                StandardCell::Boolean { value, format } => value.to_string().len(),
-                StandardCell::ProgressBar { bar } => 0, // 0 means fill width
+            let w = match &self.0 {
+                StandardCellEnum::Text { text } => text.len(),
+                StandardCellEnum::Integer { as_str, .. } => as_str.len(),
+                StandardCellEnum::Float { as_str, .. } => as_str.len(),
+                StandardCellEnum::Boolean { value } => value.to_string().len(),
+                StandardCellEnum::ProgressBar { .. } => 0, // 0 means fill width
             };
 
             w as u16
         }
-    }
-    impl ColumnType for StandardColumnType {}
 
-    pub struct Row<C: Cell> {
-        cells: Vec<C>,
-        sizes: Vec<(u16, u16)>, // min, max. If all 0: adaptative size
+        fn get_chars(&self, buffer: &mut Vec<char>) {
+            todo!()
+        }
     }
 
-    pub struct Table<T: ColumnType, C: Cell> {
+    impl ColumnType for StandardColumnType {
+        type CellType = StandardCell;
+
+        fn default_cell(&self) -> Self::CellType {
+            let e = match self {
+                StandardColumnType::Text { .. } => StandardCellEnum::Text {
+                    text: String::new(),
+                },
+                StandardColumnType::Number { .. } => StandardCellEnum::Integer {
+                    value: 0,
+                    as_str: "0".to_string(),
+                },
+                StandardColumnType::Boolean { .. } => StandardCellEnum::Boolean { value: false },
+                StandardColumnType::ProgressBar { .. } => {
+                    StandardCellEnum::ProgressBar { amt: 0.0 }
+                }
+            };
+            StandardCell(e)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn text_and_boolean_values_update_only_their_cell_types() {
+            let text_column = StandardColumnType::new_text(text::TextAlign::Left);
+            let mut text_cell = text_column.default_cell();
+            "hello".into_cell(&text_column, &mut text_cell);
+            assert!(matches!(
+                &text_cell.0,
+                StandardCellEnum::Text { text } if text == "hello"
+            ));
+
+            let boolean_column = StandardColumnType::new_boolean(text::TextAlign::Left);
+            let mut boolean_cell = boolean_column.default_cell();
+            true.into_cell(&boolean_column, &mut boolean_cell);
+            assert!(matches!(
+                boolean_cell.0,
+                StandardCellEnum::Boolean { value: true }
+            ));
+        }
+    }
+
+    pub struct Table<T: ColumnType> {
         titles: Vec<String>,
         columns: Vec<T>,
         column_widths: Vec<ColumnWidth>,
-        rows: Vec<Row<C>>,
+        cells: Vec<T::CellType>,
         computed_widths: Vec<u16>,
         max_rows: u16,
+        current_num_rows: u16,
     }
 
-    pub type StandardTable = Table<StandardColumnType, StandardCell>;
+    pub type StandardTable = Table<StandardColumnType>;
     pub use builder::TableBuilder;
 
+    pub struct Row<'a, C: Cell> {
+        cells: &'a mut [C],
+    }
+
+    pub struct RowMut<'a, C: Cell> {
+        cells: &'a mut [C],
+    }
+
+    impl<'a, C: Cell> Row<'a, C> {
+        pub fn cell(&self, index: usize) -> &C {
+            &self.cells[index]
+        }
+    }
+
+    impl<'a, C: Cell> RowMut<'a, C> {
+        pub fn cell(&self, index: usize) -> &C {
+            &self.cells[index]
+        }
+
+        pub fn cell_mut(&mut self, index: usize) -> &mut C {
+            &mut self.cells[index]
+        }
+
+        pub fn set(&mut self, data: &[C]) {
+            for (s, o) in self.cells.iter_mut().zip(data) {
+                *s = o.clone();
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
     pub enum ColumnWidth {
         Fixed(u16),
         FixedRelative(f32),
@@ -1023,15 +1210,7 @@ pub mod table {
         },
     }
 
-    impl<C: Cell> Index<usize> for Row<C> {
-        type Output = C;
-
-        fn index(&self, index: usize) -> &Self::Output {
-            &self.cells[index]
-        }
-    }
-
-    impl<T: ColumnType, C: Cell> Displayable for Table<T, C> {
+    impl<T: ColumnType> Displayable for Table<T> {
         fn get_chars(&mut self) -> crate::CharContainer<'_> {
             crate::CharContainer::new_empty()
         }
@@ -1044,21 +1223,22 @@ pub mod table {
         }
     }
 
-    impl<T: ColumnType, C: Cell> Table<T, C> {
+    impl<T: ColumnType> Table<T> {
         fn new() -> Self {
             Self {
                 titles: vec![],
                 columns: vec![],
                 column_widths: vec![],
-                rows: vec![],
+                cells: vec![],
                 computed_widths: vec![],
+                current_num_rows: 0,
                 max_rows: 0,
             }
         }
 
         fn compute_column_widths(&mut self, available_width: u16) {
             let mut adaptative_sizes = vec![0; self.column_widths.len()];
-            for (i, _width) in self
+            for (i, &_width) in self
                 .column_widths
                 .iter()
                 .enumerate()
@@ -1067,7 +1247,10 @@ pub mod table {
                     _ => false,
                 })
             {
-                let max_len = self.rows.iter().map(|e| e[i].get_width()).max().unwrap_or(0);
+                let max_len = (0..self.current_num_rows as usize)
+                    .map(|j| self.row(j as _)[i].get_width())
+                    .max()
+                    .unwrap_or(0);
                 let max_len = max_len.max(self.titles[i].len() as u16);
                 assert!(
                     max_len > 0,
@@ -1096,7 +1279,7 @@ pub mod table {
                     }
                 });
 
-            let mut growable_sizes = vec![0; growable_indexes.len()];
+            let mut growable_sizes = vec![0; self.column_widths.len()];
             let mut remaining_space = available_width.saturating_sub(total_fixed_width);
             let mut growable_count = growable_indexes.len() as u16;
 
@@ -1149,6 +1332,52 @@ pub mod table {
                 self.computed_widths.push(computed_width);
             }
         }
+
+        fn add_row(&mut self) {
+            let default_row = self.columns.iter().map(|c| c.default_cell());
+            self.cells.extend(default_row);
+        }
+
+        pub fn row(&self, index: usize) -> &[T::CellType] {
+            let idx = index * self.columns.len();
+            if idx + self.columns.len() <= self.cells.len() {
+                &self.cells[idx..idx + self.columns.len()]
+            } else {
+                panic!(
+                    "Row index out of bounds: {} (max {})",
+                    index,
+                    self.cells.len() / self.columns.len()
+                );
+            }
+        }
+
+        pub fn row_mut(&mut self, index: usize) -> RowMut<'_, T::CellType> {
+            let idx = index * self.columns.len();
+            if idx + self.columns.len() <= self.cells.len() {
+                RowMut {
+                    cells: &mut self.cells[idx..idx + self.columns.len()],
+                }
+            } else {
+                panic!(
+                    "Row index out of bounds: {} (max {})",
+                    index,
+                    self.cells.len() / self.columns.len()
+                );
+            }
+        }
+
+        pub fn column_type(&self, index: usize) -> T {
+            self.columns[index].clone()
+        }
+
+        pub fn cell(&self, col: usize, row: usize) -> &T::CellType {
+            &self.cells[col + row * self.columns.len()]
+        }
+
+        pub fn set_cell<V: IntoCell<T>>(&mut self, col: usize, row: usize, value: V) {
+            let cell_ref = &mut self.cells[col + row * self.columns.len()];
+            value.into_cell(&self.columns[col], cell_ref);
+        }
     }
 
     mod builder {
@@ -1157,14 +1386,14 @@ pub mod table {
         pub struct New;
         pub struct TypeSelected;
 
-        //TODO constraint T: ColumnType, C: Cell
-        pub struct TableBuilder<T: ColumnType, C: Cell, S> {
-            table: Table<T, C>,
+        //TODO constraint T: ColumnType,
+        pub struct TableBuilder<T: ColumnType, S> {
+            table: Table<T>,
             _state: S,
         }
 
-        impl TableBuilder<StandardColumnType, StandardCell, New> {
-            pub fn new_standard() -> TableBuilder<StandardColumnType, StandardCell, TypeSelected> {
+        impl TableBuilder<StandardColumnType, New> {
+            pub fn new_standard() -> TableBuilder<StandardColumnType, TypeSelected> {
                 TableBuilder {
                     table: Table::new(),
                     _state: TypeSelected,
@@ -1172,8 +1401,8 @@ pub mod table {
             }
         }
 
-        impl<T: ColumnType, C: Cell> TableBuilder<T, C, New> {
-            pub fn new_custom() -> TableBuilder<T, C, TypeSelected> {
+        impl<T: ColumnType> TableBuilder<T, New> {
+            pub fn new_custom() -> TableBuilder<T, TypeSelected> {
                 TableBuilder {
                     table: Table::new(),
                     _state: TypeSelected,
@@ -1181,7 +1410,7 @@ pub mod table {
             }
         }
 
-        impl<T: ColumnType, C: Cell> TableBuilder<T, C, TypeSelected> {
+        impl<T: ColumnType> TableBuilder<T, TypeSelected> {
             pub fn with_column(
                 mut self,
                 column_type: T,
@@ -1201,14 +1430,16 @@ pub mod table {
                 self
             }
 
-            pub fn with_n_rows(mut self, n: usize) -> Self {
+            pub fn with_n_rows(mut self, n: u16) -> Self {
+                self.table.max_rows = n;
                 for _ in 0..n {
-                    // Add empty row to table
+                    self.table.add_row();
                 }
+                self.table.current_num_rows = n;
                 self
             }
 
-            pub fn build(self) -> Table<T, C> {
+            pub fn build(self) -> Table<T> {
                 self.table
             }
         }
@@ -1284,7 +1515,7 @@ mod factory_widgets_tests {
     fn set_text() {
         let size = (8, 4);
         let mut output = TestOutput::<35, 4>::new();
-        let mut text_box = WidgetBuilder::new(TextBox::new(
+        let text_box = WidgetBuilder::new(TextBox::new(
             "ABC\nDEF",
             super::Listener::empty(),
             TextAlign::Left,
@@ -1877,7 +2108,26 @@ mod factory_widgets_tests {
                 ColumnWidth::Growable(5, 50),
                 "Progress",
             )
+            .with_n_rows(4)
             .build();
+
+        // let set_row = |idx: usize, pid: &str, number: i32, status: &str, progress: f32| {
+        //     let mut row = table.row(idx);
+        //     row[0].set_value(pid.to_string());
+        //     row[1].set_value(number);
+        //     row[2].set_value(status.to_string());
+        //     row[3].set_value(progress);
+        // };
+        //
+
+        set_row!(table, 0, ["105", -20, "Running", 0.5]);
+        // table.row_mut(1).set(&cells);
+        assert_eq!(table.row(0)[0].get_width(), 3);
+        assert_eq!(table.row(0)[1].get_width(), 3);
+        assert_eq!(table.row(0)[2].get_width(), 7);
+        table.set_cell(1, 0, -2);
+        assert_eq!(table.row(0)[1].get_width(), 2);
+
         table.on_event(Event::Resize(40, 10), &mut ActionList::new());
         let mut output = TestOutput::<40, 10>::new();
         let layout = Layout::new()
