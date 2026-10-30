@@ -35,47 +35,62 @@ impl OS {
 /// Can own the data or borrow it
 pub struct CharContainer<'a> {
     chars: Vec<Cow<'a, [(u16, u16, char)]>>,
-    formats: Vec<crate::text_formatting::CombinedFormat>,
-    current_format: crate::text_formatting::CombinedFormat,
+    formats: Vec<(crate::text_formatting::CombinedFormat, usize)>,
+    mapping: Vec<usize>, // Stores the total size at each `chars` element
+    current_size: usize,
 }
 
 impl<'a> CharContainer<'a> {
     pub fn new_empty() -> Self {
         Self {
             chars: Vec::new(),
-            formats: Vec::new(),
-            current_format: crate::text_formatting::CombinedFormat::default(),
+            formats: vec![(crate::text_formatting::CombinedFormat::default(), 0)],
+            mapping: vec![0],
+            current_size: 0,
         }
     }
 
     pub fn new_owned(chars: Vec<(u16, u16, char)>) -> Self {
         Self {
+            current_size: chars.len(),
+            mapping: vec![0, chars.len()],
             chars: vec![Cow::Owned(chars)],
-            formats: vec![crate::text_formatting::CombinedFormat::default()],
-            current_format: crate::text_formatting::CombinedFormat::default(),
+            formats: vec![(crate::text_formatting::CombinedFormat::default(), 0)],
         }
     }
 
     pub fn new_borrowed(chars: &'a [(u16, u16, char)]) -> Self {
         Self {
+            current_size: chars.len(),
+            mapping: vec![0, chars.len()],
             chars: vec![Cow::Borrowed(chars)],
-            formats: vec![crate::text_formatting::CombinedFormat::default()],
-            current_format: crate::text_formatting::CombinedFormat::default(),
+            formats: vec![(crate::text_formatting::CombinedFormat::default(), 0)],
         }
     }
 
     pub fn add_owned(&mut self, other: Vec<(u16, u16, char)>) {
+        if self.current_size > 0 {
+            self.mapping.push(self.current_size);
+        }
+        self.current_size += other.len();
         self.chars.push(Cow::Owned(other));
-        self.formats.push(self.current_format);
     }
 
     pub fn add_borrowed(&mut self, other: &'a [(u16, u16, char)]) {
+        if self.current_size > 0 {
+            self.mapping.push(self.current_size);
+        }
+        self.current_size += other.len();
         self.chars.push(Cow::Borrowed(other));
-        self.formats.push(self.current_format);
     }
 
     pub fn set_format(&mut self, format: crate::text_formatting::CombinedFormat) {
-        self.current_format = format;
+        let last = self.formats.last_mut().unwrap();
+        if last.1 == self.current_size {
+            last.0 = format;
+        } else {
+            self.formats.push((format, self.current_size));
+        }
     }
 
     pub(crate) fn chars(&self) -> Vec<(u16, u16, char)> {
@@ -85,23 +100,41 @@ impl<'a> CharContainer<'a> {
             .cloned()
             .collect()
     }
-}
 
-impl<'a> IntoIterator for CharContainer<'a> {
-    type Item = (
-        Cow<'a, [(u16, u16, char)]>,
-        crate::text_formatting::CombinedFormat,
-    );
-    type IntoIter = std::vec::IntoIter<Self::Item>;
+    fn len(&self) -> usize {
+        self.current_size
+    }
 
-    fn into_iter(self) -> Self::IntoIter {
-        let items: Vec<Self::Item> = self
-            .chars
-            .into_iter()
-            .zip(self.formats.into_iter())
-            .map(|(chars, format)| (chars, format))
-            .collect();
-        items.into_iter()
+    fn at(
+        &'a self,
+        index: usize,
+    ) -> Option<(
+        &'a (u16, u16, char),
+        &'a crate::text_formatting::CombinedFormat,
+    )> {
+        let (data_index, &char_mapping) = self
+            .mapping
+            .iter()
+            .enumerate()
+            .take_while(|(i, e)| **e <= index)
+            .last()
+            .unwrap();
+
+        let format_idx = self
+            .formats
+            .iter()
+            .enumerate()
+            .take_while(|(j, (i, e))| *e <= index)
+            .last()
+            .unwrap()
+            .0;
+
+        let remaining = index - char_mapping;
+
+        let a = self.chars[data_index].get(remaining);
+        let b = self.formats.get(format_idx).map(|(f, _)| f);
+
+        a.zip(b)
     }
 }
 
@@ -152,6 +185,8 @@ impl crate::layout::RenderedLayout {
             )
         };
 
+        crate::text_formatting::CombinedFormat::reset_global();
+
         if render_outline {
             for (x, y, c) in outline_buffer.iter().filter(|(x, y, _)| {
                 self.masks[layer].at(placement.x as u16 + x, placement.y as u16 + y)
@@ -172,18 +207,36 @@ impl crate::layout::RenderedLayout {
 
         // Content
         let mut lock = widget.widget.displayable.write().unwrap();
+        let mut current_format = crate::text_formatting::CombinedFormat::default();
         let chars = lock.get_chars();
 
-        for (char_set, format) in chars.into_iter() {
-            format.apply();
+        for char_idx in 0..chars.len() {
+            if let Some((c, &format)) = chars.at(char_idx) {
+                let (x, y, c) = *c;
+                if format != current_format {
+                    current_format = format;
+                    format.apply();
+                }
 
-            for (x, y, c) in char_set.iter().filter(|(x, y, c)| {
-                self.masks[layer].at(placement.x as u16 + x, placement.y as u16 + y)
-                    && !(is_transparent && *c == ' ')
-            }) {
-                output.place_char(x + placement.x as u16, y + placement.y as u16, *c);
+                if self.masks[layer].at(placement.x as u16 + x, placement.y as u16 + y)
+                    && !(is_transparent && c == ' ')
+                {
+                    output.place_char(x + placement.x as u16, y + placement.y as u16, c);
+                }
+            } else {
+                break;
             }
         }
+        //         for (char_set, format) in chars.into_iter() {
+        //             format.apply();
+        //
+        //             for (x, y, c) in char_set.iter().filter(|(x, y, c)| {
+        //                 self.masks[layer].at(placement.x as u16 + x, placement.y as u16 + y)
+        //                     && !(is_transparent && *c == ' ')
+        //             }) {
+        //                 output.place_char(x + placement.x as u16, y + placement.y as u16, *c);
+        //             }
+        //         }
     }
 
     fn get_widget_outline_chars(

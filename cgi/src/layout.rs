@@ -1,6 +1,7 @@
 use crate::Displayable;
 use crate::coordinate::Coordinate;
 use crate::widget::{Widget, WidgetHdl};
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
@@ -279,9 +280,7 @@ impl WidgetPlacement {
             height: Coordinate::Relative(1.0),
         }
     }
-
-    //TODO: the following functions are half builder pattern half mutators which is confusing
-
+    
     pub fn shift_top_left<C: Into<Coordinate>>(&self, x: C, y: C) -> Self {
         let x = x.into();
         let y = y.into();

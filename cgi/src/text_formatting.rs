@@ -153,6 +153,7 @@ impl CombinedFormat {
         let _ = execute!(
             std::io::stdout(),
             SetAttribute(Attribute::Reset),
+            ResetColor
         );
     }
     
