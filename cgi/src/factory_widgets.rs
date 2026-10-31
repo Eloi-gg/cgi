@@ -1,7 +1,7 @@
 use crate::{Displayable, EventType};
 
-/// Simply calls set_cell for every argument you give
-/// use: `set_row(table, row, [value0, value1, ...])
+/// Simply calls set_cell for every argument you give. \
+/// use: `set_row(table, row, \[value0, value1, ...\])
 macro_rules! set_row {
     ($table:expr, $row:expr, [$($value:expr),* $(,)?]) => {{
         let table = &mut $table;
@@ -1106,7 +1106,21 @@ pub mod table {
         }
 
         fn get_chars(&self, buffer: &mut Vec<char>) {
-            todo!()
+            let str = match &self.0 {
+                StandardCellEnum::Text { text } => text,
+                StandardCellEnum::Integer { as_str, .. } => as_str,
+                StandardCellEnum::Float { as_str, .. } => as_str,
+                StandardCellEnum::Boolean { value } => {
+                    if *value {
+                        "true"
+                    } else {
+                        "false"
+                    }
+                }
+                StandardCellEnum::ProgressBar { amt } => "TODO",
+            };
+
+            buffer.extend(str.chars());
         }
     }
 
@@ -1160,7 +1174,7 @@ pub mod table {
         columns: Vec<T>,
         column_widths: Vec<ColumnWidth>,
         cells: Vec<T::CellType>,
-        computed_widths: Vec<u16>,
+        computed_column_widths: Vec<u16>,
         max_rows: u16,
         current_num_rows: u16,
     }
@@ -1212,7 +1226,44 @@ pub mod table {
 
     impl<T: ColumnType> Displayable for Table<T> {
         fn get_chars(&mut self) -> crate::CharContainer<'_> {
-            crate::CharContainer::new_empty()
+            let mut buffer = Vec::new();
+            let column_positions = self
+                .computed_column_widths
+                .iter()
+                .scan(0, |acc, e| {
+                    let r = Some(*acc);
+                    *acc += *e;
+                    r
+                })
+                .collect::<Vec<_>>();
+
+            let mut global_buffer = Vec::new();
+            for (col_idx, col_title) in self.titles.iter().enumerate() {
+                global_buffer.extend(
+                    col_title
+                        .chars()
+                        .enumerate()
+                        .map(|(i, e)| (i as u16 + column_positions[col_idx], 0, e)),
+                );
+            }
+            for row_idx in 0..self.current_num_rows {
+                let row = self.row(row_idx as usize);
+
+                //TODO: all the formatting stuff
+                for col_idx in 0..self.columns.len() {
+                    row[col_idx].get_chars(&mut buffer);
+                    global_buffer.extend(
+                        buffer
+                            .iter()
+                            .enumerate()
+                            .map(|(i, e)| (i as u16 + column_positions[col_idx], row_idx + 1, *e)),
+                    );
+                    // Add whitespaces..
+                    buffer.clear();
+                }
+            }
+
+            crate::CharContainer::new_owned(global_buffer)
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
@@ -1230,7 +1281,7 @@ pub mod table {
                 columns: vec![],
                 column_widths: vec![],
                 cells: vec![],
-                computed_widths: vec![],
+                computed_column_widths: vec![],
                 current_num_rows: 0,
                 max_rows: 0,
             }
@@ -1238,28 +1289,29 @@ pub mod table {
 
         fn compute_column_widths(&mut self, available_width: u16) {
             let mut adaptative_sizes = vec![0; self.column_widths.len()];
-            for (i, &_width) in self
-                .column_widths
-                .iter()
-                .enumerate()
-                .filter(|(_i, e)| match e {
-                    ColumnWidth::Adaptative { .. } => true,
-                    _ => false,
-                })
+            for (col_idx, &_width) in
+                self.column_widths
+                    .iter()
+                    .enumerate()
+                    .filter(|(_i, e)| match e {
+                        ColumnWidth::Adaptative { .. } => true,
+                        _ => false,
+                    })
             {
                 let max_len = (0..self.current_num_rows as usize)
-                    .map(|j| self.row(j as _)[i].get_width())
+                    .map(|j| self.row(j as _)[col_idx].get_width())
                     .max()
                     .unwrap_or(0);
-                let max_len = max_len.max(self.titles[i].len() as u16);
+                let max_len = max_len.max(self.titles[col_idx].len() as u16);
                 assert!(
                     max_len > 0,
                     "0 len detected. 0 means the cell will use as many chars as possible, and is incompatible to a column set to adaptative width. Please use a Growable column instead."
                 );
-                let ColumnWidth::Adaptative { min, max, offset } = self.column_widths[i] else {
+                let ColumnWidth::Adaptative { min, max, offset } = self.column_widths[col_idx]
+                else {
                     unreachable!()
                 };
-                adaptative_sizes[i] = max_len.clamp(min, max) + offset;
+                adaptative_sizes[col_idx] = max_len.clamp(min, max) + offset;
             }
 
             let mut growable_indexes = vec![];
@@ -1321,7 +1373,7 @@ pub mod table {
                 }
             }
 
-            self.computed_widths.clear();
+            self.computed_column_widths.clear();
             for (i, width) in self.column_widths.iter().enumerate() {
                 let computed_width = match width {
                     ColumnWidth::Fixed(w) => *w,
@@ -1329,7 +1381,7 @@ pub mod table {
                     ColumnWidth::Growable(..) => growable_sizes[i],
                     ColumnWidth::Adaptative { .. } => adaptative_sizes[i],
                 };
-                self.computed_widths.push(computed_width);
+                self.computed_column_widths.push(computed_width);
             }
         }
 
@@ -1745,7 +1797,8 @@ mod factory_widgets_tests {
             "Centered Text\nother",
             super::Listener::empty(),
             TextAlign::Center,
-        ))
+        )
+        .widget_builder()
         .build();
         text_box
             .edit()
@@ -2075,7 +2128,7 @@ mod factory_widgets_tests {
     }
 
     #[test]
-    fn board() {
+    fn table() {
         use crate::factory_widgets::table::*;
 
         let mut table = TableBuilder::new_standard()
@@ -2095,7 +2148,7 @@ mod factory_widgets_tests {
             )
             .with_column(
                 StandardColumnType::new_text(TextAlign::Center),
-                ColumnWidth::Fixed(5),
+                ColumnWidth::Fixed(12),
                 "Status",
             )
             .with_column(
@@ -2117,13 +2170,17 @@ mod factory_widgets_tests {
         // };
         //
 
-        set_row!(table, 0, ["105", -20, "Running", 0.5]);
+        set_row!(table, 0, ["105", -4, "Running", 0.5]);
+        set_row!(table, 1, ["95", 0, "Paused", 0.15]);
+        set_row!(table, 2, ["1", 20, "Waiting", 1.0]);
+        set_row!(table, 3, ["104", -1, "Running", 0.0]);
+
         // table.row_mut(1).set(&cells);
         assert_eq!(table.row(0)[0].get_width(), 3);
-        assert_eq!(table.row(0)[1].get_width(), 3);
-        assert_eq!(table.row(0)[2].get_width(), 7);
-        table.set_cell(1, 0, -2);
         assert_eq!(table.row(0)[1].get_width(), 2);
+        assert_eq!(table.row(0)[2].get_width(), 7);
+        table.set_cell(1, 0, -20);
+        assert_eq!(table.row(0)[1].get_width(), 3);
 
         table.on_event(Event::Resize(40, 10), &mut ActionList::new());
         let mut output = TestOutput::<40, 10>::new();
