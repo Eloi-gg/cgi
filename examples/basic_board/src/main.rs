@@ -7,36 +7,36 @@ fn main() {
 
     let (mut app, _) = cgi::Application::new();
 
-    let title = WidgetBuilder::new(TextBox::new(
+    let title = TextBox::new(
         "Title",
         Listener::empty(),
         factory_widgets::text::TextAlign::Center,
-    ))
+    ).widget_builder()
     .with_outline(symbols::OutlineStyle::Double)
     .build();
 
-    let panel_left = WidgetBuilder::new(TextBox::new(
+    let panel_left = TextBox::new(
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
         Listener::empty(),
         TextAlign::Left,
-    ))
+    ).widget_builder()
     .with_outline(symbols::OutlineStyle::Rounded)
     .with_title("Left Panel")
     .build();
-    let panel_right = WidgetBuilder::new(TextBox::new(
+    let panel_right = TextBox::new(
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
         Listener::empty(),
         TextAlign::Left,
-    ))
+    ).widget_builder()
     .with_outline(symbols::OutlineStyle::Rounded)
     .with_title("Right Panel")
     .build();
 
-    let progress_bar = WidgetBuilder::new(ProgressBar::new(
+    let progress_bar = ProgressBar::new(
         ProgressBarType::HorizontalNineLevels,
         0.565,
         Listener::empty(),
-    ))
+    ).widget_builder()
     .with_outline(symbols::OutlineStyle::Normal)
     .with_title("Progress")
     .build();

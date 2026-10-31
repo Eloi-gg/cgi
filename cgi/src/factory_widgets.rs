@@ -1515,12 +1515,9 @@ mod factory_widgets_tests {
     fn set_text() {
         let size = (8, 4);
         let mut output = TestOutput::<35, 4>::new();
-        let text_box = WidgetBuilder::new(TextBox::new(
-            "ABC\nDEF",
-            super::Listener::empty(),
-            TextAlign::Left,
-        ))
-        .build();
+        let text_box = TextBox::new("ABC\nDEF", super::Listener::empty(), TextAlign::Left)
+            .widget_builder()
+            .build();
 
         let mut edit = text_box.edit();
         edit.set_wrapping_mode(Wrapping::Off);
@@ -1724,12 +1721,10 @@ mod factory_widgets_tests {
     #[test]
     fn centered_text() {
         let mut output = TestOutput::<25, 1>::new();
-        let mut text_box = WidgetBuilder::new(TextBox::new(
-            "Centered Text",
-            super::Listener::empty(),
-            TextAlign::Center,
-        ))
-        .build();
+        let mut text_box =
+            TextBox::new("Centered Text", super::Listener::empty(), TextAlign::Center)
+                .widget_builder()
+                .build();
         text_box
             .edit()
             .on_event(Event::Resize(25, 2), &mut ActionList::new());
@@ -1746,7 +1741,7 @@ mod factory_widgets_tests {
     #[test]
     fn centered_mutliline_text() {
         let mut output = TestOutput::<25, 2>::new();
-        let mut text_box = WidgetBuilder::new(TextBox::new(
+        let mut text_box = TextBox::new(
             "Centered Text\nother",
             super::Listener::empty(),
             TextAlign::Center,
@@ -1767,12 +1762,9 @@ mod factory_widgets_tests {
     #[test]
     fn right_text() {
         let mut output = TestOutput::<25, 1>::new();
-        let mut text_box = WidgetBuilder::new(TextBox::new(
-            "Right Text",
-            super::Listener::empty(),
-            TextAlign::Right,
-        ))
-        .build();
+        let mut text_box = TextBox::new("Right Text", super::Listener::empty(), TextAlign::Right)
+            .widget_builder()
+            .build();
         text_box
             .edit()
             .on_event(Event::Resize(25, 2), &mut ActionList::new());
@@ -1788,11 +1780,12 @@ mod factory_widgets_tests {
     #[test]
     fn right_multiline_text() {
         let mut output = TestOutput::<25, 2>::new();
-        let mut text_box = WidgetBuilder::new(TextBox::new(
+        let mut text_box = TextBox::new(
             "Right Text\nshort",
             super::Listener::empty(),
             TextAlign::Right,
-        ))
+        )
+        .widget_builder()
         .build();
         text_box
             .edit()
@@ -1819,11 +1812,12 @@ mod factory_widgets_tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>();
 
-        let mut progress_bar = WidgetBuilder::new(factory_widgets::progression::ProgressBar::new(
+        let mut progress_bar = factory_widgets::progression::ProgressBar::new(
             factory_widgets::progression::ProgressBarType::HorizontalNineLevels,
             0.0,
             super::Listener::empty(),
-        ))
+        )
+        .widget_builder()
         .build();
 
         let mut output = TestOutput::<2, 1>::new();
@@ -1858,7 +1852,8 @@ mod factory_widgets_tests {
             factory_widgets::text::TextAlign::Left,
         );
         text_box.set_wrapping_mode(Wrapping::Off);
-        let widget = WidgetBuilder::new(text_box)
+        let widget = text_box
+            .widget_builder()
             .with_outline(symbols::OutlineStyle::Thick)
             .build();
 
@@ -1904,7 +1899,8 @@ mod factory_widgets_tests {
             factory_widgets::text::TextAlign::Left,
         );
         text_box.set_wrapping_mode(Wrapping::PerLetter);
-        let widget = WidgetBuilder::new(text_box)
+        let widget = text_box
+            .widget_builder()
             .with_outline(symbols::OutlineStyle::Thick)
             .build();
 
@@ -1948,7 +1944,8 @@ mod factory_widgets_tests {
             factory_widgets::text::TextAlign::Left,
         );
         text_box.set_wrapping_mode(Wrapping::PerWord);
-        let widget = WidgetBuilder::new(text_box)
+        let widget = text_box
+            .widget_builder()
             .with_outline(symbols::OutlineStyle::Thick)
             .build();
 

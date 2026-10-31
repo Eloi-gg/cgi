@@ -23,10 +23,12 @@ fn main() {
     // logger.send_message("APP CONNECTED");
     let (mut app, app_connection) = cgi::Application::new();
 
-    let tb = WidgetBuilder::new(TextBox::default())
+    let tb = TextBox::default()
+        .widget_builder()
         .with_outline(symbols::OutlineStyle::Normal)
         .build();
-    let empty = WidgetBuilder::new(cgi::factory_widgets::utils::Empty)
+    let empty = cgi::factory_widgets::utils::Empty
+        .widget_builder()
         .with_outline(symbols::OutlineStyle::Rounded)
         .with_title("Empty")
         .build();

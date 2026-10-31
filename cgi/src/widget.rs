@@ -152,7 +152,7 @@ impl<T: Displayable + 'static> WidgetBuilder<T> {
     ///
     /// # Arguments
     /// * `displayable` - The displayable object to wrap in the widget
-    pub fn new(displayable: T) -> Self {
+    pub(crate) fn new(displayable: T) -> Self {
         WidgetBuilder {
             displayable,
             visible: true,

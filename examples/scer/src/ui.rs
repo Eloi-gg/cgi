@@ -1,5 +1,4 @@
-use cgi::factory_widgets as fw;
-use cgi::widget::WidgetBuilder;
+use cgi::{Displayable, factory_widgets as fw};
 use cgi::{Layout, Widget, WidgetPlacement};
 use rand::Rng;
 
@@ -12,7 +11,8 @@ pub fn get_layout_id(size: (u16, u16)) -> u8 {
 }
 
 pub fn small_layout() -> Layout {
-    let screen = WidgetBuilder::new(fw::utils::Empty)
+    let screen = fw::utils::Empty
+        .widget_builder()
         .with_outline(cgi::symbols::OutlineStyle::Double)
         .build();
     let mut layout = Layout::new();
@@ -65,14 +65,13 @@ mod modules {
             NEXT_INSTRUCTION_SIZE.0,
             NEXT_INSTRUCTION_SIZE.1,
         );
-        let widget = &WidgetBuilder::new(
-            fw::text::TextBox::new(
-                "0b00000000100010000000000000100001\npush 0x21",
-                empty_listener.clone(),
-                fw::text::TextAlign::Left,
-            )
-            .with_wrapping_mode(Wrapping::Off),
+        let widget = &fw::text::TextBox::new(
+            "0b00000000100010000000000000100001\npush 0x21",
+            empty_listener.clone(),
+            fw::text::TextAlign::Left,
         )
+        .with_wrapping_mode(Wrapping::Off)
+        .widget_builder()
         .with_outline(cgi::symbols::OutlineStyle::Normal)
         .with_title("Next instruction")
         .build();
@@ -123,7 +122,8 @@ mod modules {
             layout.add_widget(&register_value_widget, p);
         }
         layout.add_widget(
-            &WidgetBuilder::new(fw::utils::Empty)
+            &fw::utils::Empty
+                .widget_builder()
                 .with_outline(cgi::symbols::OutlineStyle::Normal)
                 .with_title("Registers")
                 .build(),
@@ -155,11 +155,15 @@ mod modules {
             old_messages.add_message(&format!("OLD {}", i));
         }
 
-        let old_messages_widget = WidgetBuilder::new(old_messages.0)
+        let old_messages_widget = old_messages
+            .0
+            .widget_builder()
             .with_outline(cgi::symbols::OutlineStyle::Rounded)
             .with_title("Old Messages")
             .build();
-        let new_messages_widget = WidgetBuilder::new(new_messages.0)
+        let new_messages_widget = new_messages
+            .0
+            .widget_builder()
             .with_outline(cgi::symbols::OutlineStyle::Rounded)
             .with_title("New Messages")
             .build();

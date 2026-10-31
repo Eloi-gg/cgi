@@ -457,7 +457,8 @@ mod rendering_tests {
             factory_widgets::Listener::empty(),
             factory_widgets::text::TextAlign::Left,
         );
-        let widget = WidgetBuilder::new(text_box)
+        let widget = text_box
+            .widget_builder()
             .with_outline(symbols::OutlineStyle::Thick)
             .with_title("Title")
             .build();
@@ -471,37 +472,41 @@ mod rendering_tests {
     fn titles_full() {
         let mut output = TestOutput::<132, 16>::new();
 
-        let title = WidgetBuilder::new(TextBox::new(
+        let title = TextBox::new(
             "Title",
             Listener::empty(),
             factory_widgets::text::TextAlign::Center,
-        ))
+        )
+        .widget_builder()
         .with_outline(symbols::OutlineStyle::Double)
         .with_title("Title")
         .build();
 
-        let panel_left = WidgetBuilder::new(TextBox::new(
+        let panel_left = TextBox::new(
             "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
             Listener::empty(),
             TextAlign::Left,
-        ))
+        )
+        .widget_builder()
         .with_outline(symbols::OutlineStyle::Rounded)
         .with_title("Panel Left")
         .build();
-        let panel_right = WidgetBuilder::new(TextBox::new(
+        let panel_right = TextBox::new(
             "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
             Listener::empty(),
             TextAlign::Left,
-        ))
+        )
+        .widget_builder()
         .with_outline(symbols::OutlineStyle::Rounded)
         .with_title("Panel Right")
         .build();
 
-        let progress_bar = WidgetBuilder::new(ProgressBar::new(
+        let progress_bar = ProgressBar::new(
             ProgressBarType::HorizontalNineLevels,
             0.565,
             Listener::empty(),
-        ))
+        )
+        .widget_builder()
         .with_outline(symbols::OutlineStyle::Normal)
         .with_title("Progress")
         .build();

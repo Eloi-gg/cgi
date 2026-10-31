@@ -72,26 +72,29 @@ fn build_app() -> cgi::Application {
 
     let (mut app, _) = cgi::Application::new();
 
-    let title = WidgetBuilder::new(TextBox::new(
+    let title = TextBox::new(
         "Text editor",
         Listener::empty(),
         factory_widgets::text::TextAlign::Center,
-    ))
+    )
+    .widget_builder()
     .with_outline(symbols::OutlineStyle::Double)
     .build();
 
-    let main_panel = WidgetBuilder::new(TextBox::new(
+    let main_panel = TextBox::new(
         "Type your text here...",
         Listener::new(on_event).listening_for(EventType::KeyPress),
         TextAlign::Left,
-    ))
+    )
+    .widget_builder()
     .with_outline(symbols::OutlineStyle::Rounded)
     .build();
-    let progress_bar = WidgetBuilder::new(ProgressBar::new(
+    let progress_bar = ProgressBar::new(
         ProgressBarType::HorizontalNineLevels,
         0.0,
         Listener::empty(),
-    ))
+    )
+    .widget_builder()
     .with_outline(symbols::OutlineStyle::Normal)
     .with_title("Progress")
     .build();
@@ -123,22 +126,25 @@ fn build_app_w_text_input() -> cgi::Application {
 
     let (mut app, _) = cgi::Application::new();
 
-    let title = WidgetBuilder::new(TextBox::new(
+    let title = TextBox::new(
         "Text editor",
         Listener::empty(),
         factory_widgets::text::TextAlign::Center,
-    ))
+    )
+    .widget_builder()
     .with_outline(symbols::OutlineStyle::Double)
     .build();
 
-    let main_panel = WidgetBuilder::new(TextInput::default())
-    .with_outline(symbols::OutlineStyle::Rounded)
-    .build();
-    let progress_bar = WidgetBuilder::new(ProgressBar::new(
+    let main_panel = TextInput::default()
+        .widget_builder()
+        .with_outline(symbols::OutlineStyle::Rounded)
+        .build();
+    let progress_bar = ProgressBar::new(
         ProgressBarType::HorizontalNineLevels,
         0.0,
         Listener::empty(),
-    ))
+    )
+    .widget_builder()
     .with_outline(symbols::OutlineStyle::Normal)
     .with_title("Progress")
     .build();

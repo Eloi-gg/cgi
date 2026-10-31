@@ -340,7 +340,8 @@ mod outlines {
             Listener::empty(),
             factory_widgets::text::TextAlign::Left,
         );
-        let widget = WidgetBuilder::new(text_box)
+        let widget = text_box
+            .widget_builder()
             .with_outline(OutlineStyle::Thick)
             .build();
 

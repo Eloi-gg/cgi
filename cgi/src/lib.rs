@@ -18,8 +18,8 @@ pub use coordinate::Coordinate;
 pub use crossterm::event::KeyCode;
 pub use layout::Layout;
 pub use layout::WidgetPlacement;
-pub use widget::{Widget, WidgetBuilder};
 pub use rendering::CharContainer;
+pub use widget::{Widget, WidgetBuilder};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Event {
@@ -155,4 +155,11 @@ pub trait Displayable: Send + Sync {
     ///
     /// Implementations may return either a borrowed slice or an owned Vec wrapped in a Cow.
     fn get_chars(&mut self) -> crate::CharContainer<'_>;
+
+    fn widget_builder(self) -> crate::WidgetBuilder<Self>
+    where
+        Self: Sized,
+    {
+        WidgetBuilder::new(self)
+    }
 }

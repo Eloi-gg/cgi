@@ -84,7 +84,7 @@ impl Mask {
 impl std::fmt::Debug for Mask {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let chunks = self.data.chunks(self.width / 32 + 1);
-        
+
         for c in chunks {
             for e in c {
                 write!(f, "{:032b} ", e)?;
@@ -115,7 +115,8 @@ impl MaskStack {
             *combined_mask = combined_mask.combined(&mask);
         }
         // Combined masks are offset by 1 so that they dont hide themselves
-        self.combined_masks.push(Mask::new_transparent(mask.width, mask.height()));
+        self.combined_masks
+            .push(Mask::new_transparent(mask.width, mask.height()));
     }
 
     pub fn pop(&mut self) {
@@ -280,7 +281,7 @@ impl WidgetPlacement {
             height: Coordinate::Relative(1.0),
         }
     }
-    
+
     pub fn shift_top_left<C: Into<Coordinate>>(&self, x: C, y: C) -> Self {
         let x = x.into();
         let y = y.into();
@@ -449,7 +450,7 @@ impl Layout {
 
     pub fn connect_and_add_widgets<'a, D: Displayable + 'static>(
         &mut self,
-        widgets: impl IntoIterator<Item = &'a Widget<D>> + Clone, 
+        widgets: impl IntoIterator<Item = &'a Widget<D>> + Clone,
         placements: &mut [WidgetPlacement],
     ) {
         let mut locks = widgets
@@ -769,11 +770,12 @@ pub(crate) mod tests {
             let mut layout = Layout::new();
 
             // WIDGETS
-            let text_box_widget = WidgetBuilder::new(factory_widgets::text::TextBox::new(
+            let text_box_widget = factory_widgets::text::TextBox::new(
                 &test::strings::lorem_ipsum_long(),
                 Listener::empty(),
                 factory_widgets::text::TextAlign::Left,
-            ))
+            )
+            .widget_builder()
             .with_outline(OutlineStyle::Thick)
             .build();
             let (fill_widget_back, fill_widget_front) = {
@@ -784,19 +786,21 @@ pub(crate) mod tests {
                 (b, f)
             };
             // fill_widget_front.data.lock().unwrap().visible = false;
-            let transparent_widget = WidgetBuilder::new(factory_widgets::text::TextBox::new(
+            let transparent_widget = factory_widgets::text::TextBox::new(
                 "@   ",
                 Listener::empty(),
                 factory_widgets::text::TextAlign::Left,
-            ))
+            )
+            .widget_builder()
             .with_outline(OutlineStyle::Rounded)
             .transparent()
             .build();
-            let not_transparent_widget = WidgetBuilder::new(factory_widgets::text::TextBox::new(
+            let not_transparent_widget = factory_widgets::text::TextBox::new(
                 "@",
                 Listener::empty(),
                 factory_widgets::text::TextAlign::Left,
-            ))
+            )
+            .widget_builder()
             .with_outline(OutlineStyle::Rounded)
             .build();
 
@@ -815,7 +819,7 @@ pub(crate) mod tests {
             layout.add_widget(&fill_widget_front, fill_front_placement);
             layout.add_widget(&transparent_widget, transparent_placement);
             layout.add_widget(&not_transparent_widget, not_transparent_placement);
-            
+
             // RENDERING
             let layout = layout.render(16, 8);
             for mask_id in 0..layout.masks.len() {
