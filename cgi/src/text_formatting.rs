@@ -6,7 +6,7 @@ use std::ops::BitOr;
 #[derive(Default, Copy, Clone, PartialEq)]
 pub struct CombinedFormat {
     foreground: Option<Color>,
-    background: Option<Color>, // TODO: implement
+    background: Option<Color>, 
     bold: u8,      // 0 = not specified, 1 = bold, 2 = not bold
     underline: u8, // 0 = not specified, 1 = underline, 2 = not underline
     italic: u8,    // 0 = not specified, 1 = italic, 2 = not italic

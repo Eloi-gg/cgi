@@ -84,12 +84,12 @@ impl<'a> CharContainer<'a> {
         self.chars.push(Cow::Borrowed(other));
     }
 
-    pub fn set_format(&mut self, format: crate::text_formatting::CombinedFormat) {
+    pub fn set_format<T: Into<crate::text_formatting::CombinedFormat>>(&mut self, format: T) {
         let last = self.formats.last_mut().unwrap();
         if last.1 == self.current_size {
-            last.0 = format;
+            last.0 = format.into();
         } else {
-            self.formats.push((format, self.current_size));
+            self.formats.push((format.into(), self.current_size));
         }
     }
 

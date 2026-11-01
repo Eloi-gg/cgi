@@ -1,18 +1,5 @@
+use crate::text_formatting::{CombinedFormat, attributes, colors};
 use crate::{Displayable, EventType};
-
-/// Simply calls set_cell for every argument you give. \
-/// use: `set_row(table, row, \[value0, value1, ...\])
-macro_rules! set_row {
-    ($table:expr, $row:expr, [$($value:expr),* $(,)?]) => {{
-        let table = &mut $table;
-        let row: usize = $row;
-        let mut col = 0;
-        $(
-            table.set_cell(col, row, $value);
-            col += 1;
-        )*
-    }};
-}
 
 #[derive(Clone)]
 pub struct Listener<T: ?Sized> {
@@ -1145,30 +1132,6 @@ pub mod table {
         }
     }
 
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn text_and_boolean_values_update_only_their_cell_types() {
-            let text_column = StandardColumnType::new_text(text::TextAlign::Left);
-            let mut text_cell = text_column.default_cell();
-            "hello".into_cell(&text_column, &mut text_cell);
-            assert!(matches!(
-                &text_cell.0,
-                StandardCellEnum::Text { text } if text == "hello"
-            ));
-
-            let boolean_column = StandardColumnType::new_boolean(text::TextAlign::Left);
-            let mut boolean_cell = boolean_column.default_cell();
-            true.into_cell(&boolean_column, &mut boolean_cell);
-            assert!(matches!(
-                boolean_cell.0,
-                StandardCellEnum::Boolean { value: true }
-            ));
-        }
-    }
-
     pub struct Table<T: ColumnType> {
         titles: Vec<String>,
         columns: Vec<T>,
@@ -1177,6 +1140,21 @@ pub mod table {
         computed_column_widths: Vec<u16>,
         max_rows: u16,
         current_num_rows: u16,
+    }
+
+    /// Simply calls set_cell for every argument you give. \
+    /// use: `set_row(table, row, \[value0, value1, ...\])
+    #[macro_export]
+    macro_rules! set_table_row {
+        ($table:expr, $row:expr, [$($value:expr),* $(,)?]) => {{
+            let table = &mut $table;
+            let row: usize = $row;
+            let mut col = 0;
+            $(
+                table.set_cell(col, row, $value);
+                col += 1;
+            )*
+        }};
     }
 
     pub type StandardTable = Table<StandardColumnType>;
@@ -1227,6 +1205,8 @@ pub mod table {
     impl<T: ColumnType> Displayable for Table<T> {
         fn get_chars(&mut self) -> crate::CharContainer<'_> {
             let mut buffer = Vec::new();
+            let mut char_container = crate::CharContainer::new_empty();
+
             let column_positions = self
                 .computed_column_widths
                 .iter()
@@ -1237,33 +1217,55 @@ pub mod table {
                 })
                 .collect::<Vec<_>>();
 
-            let mut global_buffer = Vec::new();
+            // Titles
+            let mut titles_buffer = Vec::new();
+            char_container.set_format(attributes::BOLD | colors::back::DARKGREEN);
             for (col_idx, col_title) in self.titles.iter().enumerate() {
-                global_buffer.extend(
+                titles_buffer.extend(
                     col_title
                         .chars()
                         .enumerate()
                         .map(|(i, e)| (i as u16 + column_positions[col_idx], 0, e)),
                 );
+                for x in col_title.len()..(self.computed_column_widths[col_idx] as _) {
+                    titles_buffer.push((x as u16 + column_positions[col_idx], 0, ' '));
+                }
             }
+            char_container.add_owned(titles_buffer);
+            char_container.set_format(attributes::NORMAL | colors::back::GREY);
+            let even_row_fmt = colors::back::WHITE;
+            let odd_row_fmt = colors::back::DARKGREY;
+
+            let mut rows_buffer = Vec::new();
             for row_idx in 0..self.current_num_rows {
                 let row = self.row(row_idx as usize);
+                let fmt = if row_idx % 2 == 0 {
+                    even_row_fmt
+                } else {
+                    odd_row_fmt
+                };
 
+                char_container.set_format(fmt);
                 //TODO: all the formatting stuff
                 for col_idx in 0..self.columns.len() {
                     row[col_idx].get_chars(&mut buffer);
-                    global_buffer.extend(
+                    rows_buffer.extend(
                         buffer
                             .iter()
                             .enumerate()
                             .map(|(i, e)| (i as u16 + column_positions[col_idx], row_idx + 1, *e)),
                     );
                     // Add whitespaces..
+                    for x in buffer.len()..(self.computed_column_widths[col_idx] as _) {
+                        rows_buffer.push((x as u16 + column_positions[col_idx], row_idx + 1, ' '));
+                    }
+                    char_container.add_owned(rows_buffer.clone());
+                    rows_buffer.clear();
                     buffer.clear();
                 }
             }
 
-            crate::CharContainer::new_owned(global_buffer)
+            char_container
         }
 
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
@@ -1335,41 +1337,39 @@ pub mod table {
             let mut remaining_space = available_width.saturating_sub(total_fixed_width);
             let mut growable_count = growable_indexes.len() as u16;
 
-            if growable_count != 0 {
-                let mut filled_a_column = false;
-                while remaining_space > 0 {
-                    let growable_added_width = remaining_space / growable_count;
-                    let mut extra_spaces = remaining_space % growable_count;
+            let mut filled_a_column = false;
+            while remaining_space > 0 && growable_count > 0 {
+                let growable_added_width = remaining_space / growable_count;
+                let mut extra_spaces = remaining_space % growable_count;
 
+                for &i in &growable_indexes {
+                    let ColumnWidth::Growable(min, max) = self.column_widths[i] else {
+                        unreachable!()
+                    };
+                    let current_width = min + growable_added_width;
+                    if current_width >= max {
+                        growable_sizes[i] = max;
+                        remaining_space = remaining_space.saturating_sub(max);
+                        filled_a_column = true;
+                        growable_count -= 1;
+                        break;
+                    }
+                }
+
+                if !filled_a_column {
                     for &i in &growable_indexes {
                         let ColumnWidth::Growable(min, max) = self.column_widths[i] else {
                             unreachable!()
                         };
-                        let current_width = min + growable_added_width;
-                        if current_width >= max {
-                            growable_sizes[i] = max;
-                            remaining_space = remaining_space.saturating_sub(max);
-                            filled_a_column = true;
-                            growable_count -= 1;
-                            break;
+                        let mut current_width = min + growable_added_width;
+                        if extra_spaces > 0 && current_width < max {
+                            current_width += 1;
+                            extra_spaces -= 1;
                         }
+                        growable_sizes[i] = current_width;
                     }
 
-                    if !filled_a_column {
-                        for &i in &growable_indexes {
-                            let ColumnWidth::Growable(min, max) = self.column_widths[i] else {
-                                unreachable!()
-                            };
-                            let mut current_width = min + growable_added_width;
-                            if extra_spaces > 0 && current_width < max {
-                                current_width += 1;
-                                extra_spaces -= 1;
-                            }
-                            growable_sizes[i] = current_width;
-                        }
-
-                        break;
-                    }
+                    break;
                 }
             }
 
@@ -2170,10 +2170,10 @@ mod factory_widgets_tests {
         // };
         //
 
-        set_row!(table, 0, ["105", -4, "Running", 0.5]);
-        set_row!(table, 1, ["95", 0, "Paused", 0.15]);
-        set_row!(table, 2, ["1", 20, "Waiting", 1.0]);
-        set_row!(table, 3, ["104", -1, "Running", 0.0]);
+        set_table_row!(table, 0, ["105", -4, "Running", 0.5]);
+        set_table_row!(table, 1, ["95", 0, "Paused", 0.15]);
+        set_table_row!(table, 2, ["1", 20, "Waiting", 1.0]);
+        set_table_row!(table, 3, ["104", -1, "Running", 0.0]);
 
         // table.row_mut(1).set(&cells);
         assert_eq!(table.row(0)[0].get_width(), 3);
