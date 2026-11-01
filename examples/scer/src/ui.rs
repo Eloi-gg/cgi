@@ -86,7 +86,7 @@ mod modules {
             let mut tb =
                 fw::text::TextBox::new(s, empty_listener.clone(), fw::text::TextAlign::Left);
             tb.set_style(
-                cgi::text_formatting::attributes::BOLD | cgi::text_formatting::colors::GREY,
+                cgi::text_formatting::attributes::BOLD | cgi::text_formatting::colors::front::GREY,
             );
             Widget::new(tb)
         };

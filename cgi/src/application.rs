@@ -281,7 +281,7 @@ impl Application {
         use crate::text_formatting::attributes::*;
         use crate::text_formatting::colors::*;
 
-        let format = BOLD | RED | UNDERLINE | ITALIC;
+        let format = BOLD | front::RED | UNDERLINE | ITALIC;
         // let format = format | GREY;
         let format = format | DIM;
         let format = format | NO_UNDERLINE;

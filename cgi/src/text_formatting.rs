@@ -16,7 +16,8 @@ pub struct CombinedFormat {
 #[derive(Clone, Copy)]
 pub enum Format {
     Attribute(Attribute),
-    Color(Color),
+    FrontColor(Color),
+    BackColor(Color),
 }
 
 pub mod attributes {
@@ -34,23 +35,48 @@ pub mod attributes {
 
 pub mod colors {
     use super::*;
-    
-    pub static BLACK: Format = Format::Color(Color::Black);
-    pub static DARKGREY: Format = Format::Color(Color::DarkGrey);
-    pub static RED: Format = Format::Color(Color::Red);
-    pub static DARKRED: Format = Format::Color(Color::DarkRed);
-    pub static GREEN: Format = Format::Color(Color::Green);
-    pub static DARKGREEN: Format = Format::Color(Color::DarkGreen);
-    pub static YELLOW: Format = Format::Color(Color::Yellow);
-    pub static DARKYELLOW: Format = Format::Color(Color::DarkYellow);
-    pub static BLUE: Format = Format::Color(Color::Blue);
-    pub static DARKBLUE: Format = Format::Color(Color::DarkBlue);
-    pub static MAGENTA: Format = Format::Color(Color::Magenta);
-    pub static DARKMAGENTA: Format = Format::Color(Color::DarkMagenta);
-    pub static CYAN: Format = Format::Color(Color::Cyan);
-    pub static DARKCYAN: Format = Format::Color(Color::DarkCyan);
-    pub static WHITE: Format = Format::Color(Color::White);
-    pub static GREY: Format = Format::Color(Color::Grey);
+
+    pub mod front {
+        use super::*;
+        
+        pub static BLACK: Format = Format::FrontColor(Color::Black);
+        pub static DARKGREY: Format = Format::FrontColor(Color::DarkGrey);
+        pub static RED: Format = Format::FrontColor(Color::Red);
+        pub static DARKRED: Format = Format::FrontColor(Color::DarkRed);
+        pub static GREEN: Format = Format::FrontColor(Color::Green);
+        pub static DARKGREEN: Format = Format::FrontColor(Color::DarkGreen);
+        pub static YELLOW: Format = Format::FrontColor(Color::Yellow);
+        pub static DARKYELLOW: Format = Format::FrontColor(Color::DarkYellow);
+        pub static BLUE: Format = Format::FrontColor(Color::Blue);
+        pub static DARKBLUE: Format = Format::FrontColor(Color::DarkBlue);
+        pub static MAGENTA: Format = Format::FrontColor(Color::Magenta);
+        pub static DARKMAGENTA: Format = Format::FrontColor(Color::DarkMagenta);
+        pub static CYAN: Format = Format::FrontColor(Color::Cyan);
+        pub static DARKCYAN: Format = Format::FrontColor(Color::DarkCyan);
+        pub static WHITE: Format = Format::FrontColor(Color::White);
+        pub static GREY: Format = Format::FrontColor(Color::Grey);        
+    }
+
+    pub mod back {
+        use super::*;
+        
+        pub static BLACK: Format = Format::BackColor(Color::Black);
+        pub static DARKGREY: Format = Format::BackColor(Color::DarkGrey);
+        pub static RED: Format = Format::BackColor(Color::Red);
+        pub static DARKRED: Format = Format::BackColor(Color::DarkRed);
+        pub static GREEN: Format = Format::BackColor(Color::Green);
+        pub static DARKGREEN: Format = Format::BackColor(Color::DarkGreen);
+        pub static YELLOW: Format = Format::BackColor(Color::Yellow);
+        pub static DARKYELLOW: Format = Format::BackColor(Color::DarkYellow);
+        pub static BLUE: Format = Format::BackColor(Color::Blue);
+        pub static DARKBLUE: Format = Format::BackColor(Color::DarkBlue);
+        pub static MAGENTA: Format = Format::BackColor(Color::Magenta);
+        pub static DARKMAGENTA: Format = Format::BackColor(Color::DarkMagenta);
+        pub static CYAN: Format = Format::BackColor(Color::Cyan);
+        pub static DARKCYAN: Format = Format::BackColor(Color::DarkCyan);
+        pub static WHITE: Format = Format::BackColor(Color::White);
+        pub static GREY: Format = Format::BackColor(Color::Grey);        
+    }
 }
 
 impl Format {
@@ -88,10 +114,14 @@ impl Format {
                 },
                 _ => todo!(),
             },
-            Format::Color(color) => CombinedFormat {
+            Format::FrontColor(color) => CombinedFormat {
                 foreground: Some(color),
                 ..Default::default()
             },
+            Format::BackColor(color) => CombinedFormat {
+                background: Some(color),
+                ..Default::default()
+            }
         }
     }
 }
@@ -196,11 +226,12 @@ mod tests {
     #[test]
     fn combination() {
         use super::*;
-        let format = BOLD | RED | UNDERLINE | ITALIC;
+        let format = BOLD | front::RED | back::BLUE | UNDERLINE | ITALIC;
 
         assert_eq!(format.bold, 1);
         assert_eq!(format.underline, 1);
         assert_eq!(format.italic, 1);
         assert_eq!(format.foreground, Some(Color::Red));
+        assert_eq!(format.background, Some(Color::Blue));
     }
 }

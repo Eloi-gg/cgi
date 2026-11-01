@@ -55,7 +55,7 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n
         .with_width(0.5);
 
     text_widget.edit().set_style(
-        cgi::text_formatting::attributes::ITALIC | cgi::text_formatting::colors::DARKBLUE,
+        cgi::text_formatting::attributes::ITALIC | cgi::text_formatting::colors::front::DARKBLUE,
     );
 
     let layout = Layout::new()

@@ -41,7 +41,7 @@ fn main() {
     .with_title("Progress")
     .build();
 
-    progress_bar.edit().set_color(crate::text_formatting::colors::GREEN);
+    progress_bar.edit().set_color(crate::text_formatting::colors::front::GREEN);
 
     let title_placement = WidgetPlacement::fullscreen().with_height(0.3);
     let mut panels_below_placement = [WidgetPlacement::fullscreen(); 2];
