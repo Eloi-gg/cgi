@@ -906,7 +906,9 @@ pub mod text {
 }
 
 pub mod table {
-    use super::*;
+    use crate::text_formatting::Format;
+
+use super::*;
     pub trait Cell: Send + Sync + Clone {
         fn get_width(&self) -> u16;
         fn get_chars(&self, buffer: &mut Vec<char>);
@@ -1132,6 +1134,37 @@ pub mod table {
         }
     }
 
+    pub struct StyleSet {
+        even: CombinedFormat,
+        odd: CombinedFormat,
+        titles: CombinedFormat
+    }
+
+    impl StyleSet {
+        pub fn new() -> Self {
+            Self {
+                titles: colors::front::BLACK | colors::back::DARKGREEN | attributes::BOLD,
+                even: colors::front::grey(15) | colors::back::grey(200),
+                odd: colors::front::grey(10) | colors::back::grey(150),
+            }
+        }
+
+        pub fn with_titles_format<T: Into<CombinedFormat>>(mut self, format: T) -> Self {
+            self.titles = format.into();
+            self
+        }
+
+        pub fn with_even_row_format<T: Into<CombinedFormat>>(mut self, format: T) -> Self {
+            self.even = format.into();
+            self
+        }
+
+        pub fn with_odd_row_format<T: Into<CombinedFormat>>(mut self, format: T) -> Self {
+            self.odd = format.into();
+            self
+        }
+    }
+
     pub struct Table<T: ColumnType> {
         titles: Vec<String>,
         columns: Vec<T>,
@@ -1140,6 +1173,7 @@ pub mod table {
         computed_column_widths: Vec<u16>,
         max_rows: u16,
         current_num_rows: u16,
+        style_set: StyleSet
     }
 
     /// Simply calls set_cell for every argument you give. \
@@ -1219,7 +1253,7 @@ pub mod table {
 
             // Titles
             let mut titles_buffer = Vec::new();
-            char_container.set_format(attributes::BOLD | colors::back::DARKGREEN);
+            char_container.set_format(self.style_set.titles);
             for (col_idx, col_title) in self.titles.iter().enumerate() {
                 titles_buffer.extend(
                     col_title
@@ -1233,16 +1267,14 @@ pub mod table {
             }
             char_container.add_owned(titles_buffer);
             char_container.set_format(attributes::NORMAL | colors::back::GREY);
-            let even_row_fmt = colors::back::WHITE;
-            let odd_row_fmt = colors::back::DARKGREY;
 
             let mut rows_buffer = Vec::new();
             for row_idx in 0..self.current_num_rows {
                 let row = self.row(row_idx as usize);
                 let fmt = if row_idx % 2 == 0 {
-                    even_row_fmt
+                    self.style_set.even
                 } else {
-                    odd_row_fmt
+                    self.style_set.odd
                 };
 
                 char_container.set_format(fmt);
@@ -1286,6 +1318,7 @@ pub mod table {
                 computed_column_widths: vec![],
                 current_num_rows: 0,
                 max_rows: 0,
+                style_set: StyleSet::new()
             }
         }
 
@@ -1479,6 +1512,11 @@ pub mod table {
                 for (column_type, width, name) in columns {
                     self = self.with_column(column_type, width, name);
                 }
+                self
+            }
+
+            pub fn with_style_set(mut self, style_set: StyleSet) -> Self {
+                self.table.style_set = style_set;
                 self
             }
 

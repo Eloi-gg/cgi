@@ -163,19 +163,7 @@ impl Application {
         self.rendered_layout =
             self.layouts[&self.current_layout].render(self.size.0 as i32, self.size.1 as i32);
 
-        let mut actions = ActionList::new();
-        for widget in self.rendered_layout.layers[self.rendered_layout.current_layer].keys() {
-            let widget_coords = self.rendered_layout.get_widget_coords(widget, true);
-            widget.write_displayable().unwrap().on_event(
-                crate::Event::Resize(widget_coords.width as _, widget_coords.height as _),
-                &mut actions,
-            );
-        }
-        for action in actions.drain() {
-            self.handle_widget_actions(action);
-        }
-        self.output.flush();
-        self.update();
+        self.global_action.redraw_all = true;
     }
 
     /// Moves the cursor. Does NOT support [`CursorMove::ToRelativeToWidget`] (should be converted before this is called)
@@ -276,20 +264,6 @@ impl Application {
         }
     }
 
-    //TODO: delete, testing only
-    pub fn switch_format(&mut self) {
-        use crate::text_formatting::attributes::*;
-        use crate::text_formatting::colors::*;
-
-        let format = BOLD | front::RED | UNDERLINE | ITALIC;
-        // let format = format | GREY;
-        let format = format | DIM;
-        let format = format | NO_UNDERLINE;
-
-        format.apply();
-        text_formatting::CombinedFormat::reset_global();
-    }
-
     pub fn run(mut self) {
         // Initial setup
         ct::terminal::enable_raw_mode().expect("Failed to enable raw mode");
@@ -318,7 +292,6 @@ impl Application {
                         }
                         ct::event::Event::Resize(new_cols, new_rows) => {
                             self.size_changed(new_cols, new_rows);
-                            // println!("Resized to: {} cols, {} rows", new_cols, new_rows);
                         }
                         _ => {}
                     }

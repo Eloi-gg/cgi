@@ -55,6 +55,15 @@ pub mod colors {
         pub static DARKCYAN: Format = Format::FrontColor(Color::DarkCyan);
         pub static WHITE: Format = Format::FrontColor(Color::White);
         pub static GREY: Format = Format::FrontColor(Color::Grey);        
+
+        pub fn custom(r: u8, g: u8, b: u8) -> Format {
+            Format::FrontColor(Color::Rgb { r, g, b })
+        }
+
+        /// 0: black, 255: white
+        pub fn grey(amt: u8) -> Format {
+            Format::FrontColor(Color::Rgb { r: amt, g: amt, b: amt })
+        }
     }
 
     pub mod back {
@@ -76,6 +85,15 @@ pub mod colors {
         pub static DARKCYAN: Format = Format::BackColor(Color::DarkCyan);
         pub static WHITE: Format = Format::BackColor(Color::White);
         pub static GREY: Format = Format::BackColor(Color::Grey);        
+
+        pub fn custom(r: u8, g: u8, b: u8) -> Format {
+            Format::BackColor(Color::Rgb { r, g, b })
+        }
+
+        /// 0: black, 255: white
+        pub fn grey(amt: u8) -> Format {
+            Format::BackColor(Color::Rgb { r: amt, g: amt, b: amt })
+        }
     }
 }
 
