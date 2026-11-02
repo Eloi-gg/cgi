@@ -143,7 +143,7 @@ pub(crate) trait Output {
     fn place_char(&mut self, x: u16, y: u16, ch: char);
 }
 
-impl crate::layout::RenderedLayout {
+impl crate::layout::RenderedLayout {    
     pub(crate) fn full_render_to_output(&self, output: &mut dyn Output) {
         for (layer_idx, layer) in self.layers.iter().enumerate() {
             for (widget, placement) in layer.iter() {
@@ -348,8 +348,8 @@ mod rendering_tests {
 
         let widget = Widget::new(FillWidget::new('#'));
         let placement = WidgetPlacement::fullscreen().expand_or_shrink(-1, -1);
-        let layout = Layout::new().with_widget(&widget, placement).render(10, 10);
-        layout.full_render_to_output(&mut output);
+        let layout = Layout::new().with_widget(&widget, placement);
+        layout.render(10, 10).notify_size_change().full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_match_with_test_file(&rendered_text, "1_offsets_10x10");
@@ -369,11 +369,11 @@ mod rendering_tests {
             Absolute(6),
             Relative(0.5),
         );
-        let layout = Layout::new()
+        let mut layout = Layout::new()
             .with_widget(&widget1, placement1)
             .with_widget(&widget2, placement2)
             .render(15, 8);
-        layout.full_render_to_output(&mut output);
+        layout.notify_size_change().full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_match_with_test_file(&rendered_text, "2_side_by_side_15x8");
@@ -412,13 +412,15 @@ mod rendering_tests {
         )
         .shift_top_left(1, 0);
 
-        let layout = Layout::new()
+        Layout::new()
             .with_widget(&widget1, placement1)
             .with_widget(&widget2, placement2)
             .with_widget(&widget3, placement3)
             .with_widget(&widget4, placement4)
-            .render(15, 8);
-        layout.full_render_to_output(&mut output);
+            .render(15, 8)
+            .notify_size_change()
+            .full_render_to_output(&mut output);
+        
         let rendered_text = output.to_string();
 
         assert_match_with_test_file(&rendered_text, "3_more_complex_15x8");
@@ -437,13 +439,13 @@ mod rendering_tests {
             .expand_or_shrink(-1, 0);
 
         for (i, x) in [4, 8, 12].iter().enumerate() {
-            let layout = Layout::new()
+            let mut layout = Layout::new()
                 .with_widget(&widget, placement1)
                 .with_widget(&widget2, placement2)
                 .render(*x, 4);
             output.clear();
             output.change_size((*x as usize, 4));
-            layout.full_render_to_output(&mut output);
+            layout.notify_size_change().full_render_to_output(&mut output);
             let rendered_text = output.to_string();
 
             assert_match_with_test_file(&rendered_text, &format!("{}_relative_{}x4", i + 4, *x));
@@ -532,9 +534,9 @@ mod rendering_tests {
             .with_widget(&panel_right, panels_below_placement[1])
             .with_widget(&progress_bar, progress_bar_placement);
 
-        let layout = layout.render(132, 16);
-        output.clear();
-        layout.full_render_to_output(&mut output);
+        let mut layout = layout.render(132, 16);
+
+        layout.notify_size_change().full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         println!("{}", rendered_text);

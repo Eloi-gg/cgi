@@ -178,7 +178,7 @@ impl RenderedLayout {
         }
     }
 
-    pub fn get_widget_coords(
+    pub(crate) fn get_widget_coords(
         &self,
         widget: &WidgetHdl,
         only_insides: bool,
@@ -198,14 +198,45 @@ impl RenderedLayout {
         };
     }
 
-    pub fn full_iter(&self) -> impl Iterator<Item = (&WidgetHdl, &ComputedWidgetPlacement)> {
+    pub(crate) fn full_iter(&self) -> impl Iterator<Item = (&WidgetHdl, &ComputedWidgetPlacement)> {
         self.layers.iter().flat_map(|l| l.iter())
     }
 
-    pub fn full_iter_mut(
+    pub(crate) fn full_iter_mut(
         &mut self,
     ) -> impl Iterator<Item = (&WidgetHdl, &mut ComputedWidgetPlacement)> {
         self.layers.iter_mut().flat_map(|l| l.iter_mut())
+    }
+    
+    // For testing purpose only
+    pub(crate) fn notify_size_change(&mut self) -> &Self {
+        let mut actions = crate::ActionList::new();
+
+        for (widget, placement) in self.full_iter_mut() {
+            let inside_placement = if let Ok(data) = widget.widget.data.lock() {
+                if (*data).outline.is_some() {
+                    ComputedWidgetPlacement {
+                        x: placement.x + 1,
+                        y: placement.y + 1,
+                        width: placement.width - 2,
+                        height: placement.height - 2,
+                    }
+                } else {
+                    *placement
+                }
+            } else {
+                *placement
+            };
+            widget.widget.displayable.write().unwrap().on_event(
+                crate::Event::Resize(
+                    inside_placement.width as u16,
+                    inside_placement.height as u16,
+                ),
+                &mut actions,
+            );
+        }
+
+        self
     }
 }
 
@@ -582,7 +613,7 @@ impl Layout {
             layers.push(rendered_layer);
         }
 
-        let mut r = RenderedLayout {
+        let r = RenderedLayout {
             layers,
             widget_layer: layer_mapping,
             masks,
@@ -590,33 +621,34 @@ impl Layout {
         };
 
         // All this is just to send a resize event to the widgets
-        let mut actions = crate::ActionList::new();
-        for (widget, placement) in r.full_iter_mut() {
-            let inside_placement = if let Ok(data) = widget.widget.data.lock() {
-                if (*data).outline.is_some() {
-                    ComputedWidgetPlacement {
-                        x: placement.x + 1,
-                        y: placement.y + 1,
-                        width: placement.width - 2,
-                        height: placement.height - 2,
-                    }
-                } else {
-                    *placement
-                }
-            } else {
-                *placement
-            };
-            widget.widget.displayable.write().unwrap().on_event(
-                crate::Event::Resize(
-                    inside_placement.width as u16,
-                    inside_placement.height as u16,
-                ),
-                &mut actions,
-            );
-        }
+        // let mut actions = crate::ActionList::new();
+        // for (widget, placement) in r.full_iter_mut() {
+        //     let inside_placement = if let Ok(data) = widget.widget.data.lock() {
+        //         if (*data).outline.is_some() {
+        //             ComputedWidgetPlacement {
+        //                 x: placement.x + 1,
+        //                 y: placement.y + 1,
+        //                 width: placement.width - 2,
+        //                 height: placement.height - 2,
+        //             }
+        //         } else {
+        //             *placement
+        //         }
+        //     } else {
+        //         *placement
+        //     };
+        //     widget.widget.displayable.write().unwrap().on_event(
+        //         crate::Event::Resize(
+        //             inside_placement.width as u16,
+        //             inside_placement.height as u16,
+        //         ),
+        //         &mut actions,
+        //     );
+        // }
 
         r
     }
+
 
     pub fn append(&mut self, other: Layout) {
         for (layer_idx, other_layer) in other.layers.iter().enumerate() {
@@ -821,12 +853,12 @@ pub(crate) mod tests {
             layout.add_widget(&not_transparent_widget, not_transparent_placement);
 
             // RENDERING
-            let layout = layout.render(16, 8);
+            let mut layout = layout.render(16, 8);
             for mask_id in 0..layout.masks.len() {
                 println!("Mask {}: \n{:?}", mask_id, layout.masks[mask_id]);
             }
             output.clear();
-            layout.full_render_to_output(&mut output);
+            layout.notify_size_change().full_render_to_output(&mut output);
             let rendered_text = output.to_string();
             println!("{}", rendered_text);
             assert_match_with_test_file(&rendered_text, "12_layering");

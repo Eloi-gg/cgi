@@ -375,9 +375,9 @@ mod outlines {
             layout.add_widget(widget, *placement);
         }
 
-        let layout = layout.render(16, 4);
+        let mut layout = layout.render(16, 4);
         output.clear();
-        layout.full_render_to_output(&mut output);
+        layout.notify_size_change().full_render_to_output(&mut output);
         let rendered_text = output.to_string();
         assert_match_with_test_file(&rendered_text, "10_border_types");
     }
@@ -399,7 +399,7 @@ mod outlines {
             // layout.add_widget(&widgets[i], placements[i as usize]);
         }
         layout.connect_and_add_widgets(&widgets, placements.as_mut_slice());
-        layout.render(17, 7).full_render_to_output(&mut output);
+        layout.render(17, 7).notify_size_change().full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         assert_match_with_test_file(&rendered_text, "11_split_borders");

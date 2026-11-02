@@ -9,10 +9,8 @@ use cgi::*;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
-static CONSOLE: Lazy<Mutex<DebugConsole>> = Lazy::new(|| {
-    let dbg_window_path = std::env::current_dir()
-        .unwrap()
-        .join("target/debug/dbg_window");
+static CONSOLE: Lazy<Mutex<Option<DebugConsole>>> = Lazy::new(|| {
+    let dbg_window_path = crate::log::get_dbg_window_exe_path();
     dbg_window::create::spawn_server(dbg_window_path.to_str().unwrap(), "127.0.0.2", 4000);
 
     let console = Mutex::new(
@@ -22,15 +20,18 @@ static CONSOLE: Lazy<Mutex<DebugConsole>> = Lazy::new(|| {
             4000,
             Some(std::time::Duration::from_secs(5)),
         )
-        .unwrap(),
+        .ok(),
     );
 
     console
 });
 
 fn console_println(string: &str) {
-    let mut console = CONSOLE.lock().unwrap();
-    console.send_message(string);
+    if let Ok(mut console) = CONSOLE.lock() {
+        if let Some(console) = &mut *console {
+            console.send_message(string);
+        }
+    }
 }
 
 fn on_event(

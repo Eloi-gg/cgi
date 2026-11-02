@@ -313,7 +313,7 @@ impl Application {
                         self.handle_widget_actions(action);
                     }
 
-                    self.handle_global_action();
+                    self.handle_global_action(); 
                 }
             }
 

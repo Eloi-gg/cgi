@@ -1913,14 +1913,14 @@ mod factory_widgets_tests {
 
         let mut output = TestOutput::<2, 1>::new();
         let placement = WidgetPlacement::fullscreen();
-        let layout = Layout::new()
+        let mut layout = Layout::new()
             .with_widget(&progress_bar, placement)
             .render(2, 1);
 
         for step in 0..=16 {
             let amt = 1.0 - increment * (step as f32);
             progress_bar.edit().set_amt(amt);
-            layout.full_render_to_output(&mut output);
+            layout.notify_size_change().full_render_to_output(&mut output);
             let rendered_text = output.to_string();
             eprintln!(
                 "Step {}: amt={}, rendered={:?}, expected={:?}",
@@ -2158,7 +2158,7 @@ mod factory_widgets_tests {
         }
 
         layout.connect_and_add_widgets(&widgets, placements.as_mut_slice());
-        layout.render(17, 7).full_render_to_output(&mut output);
+        layout.render(17, 7).notify_size_change().full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         println!("{}", rendered_text);

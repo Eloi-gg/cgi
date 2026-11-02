@@ -54,6 +54,7 @@ pub mod connect {
         port: u16,
         timeout: Option<time::Duration>,
     ) -> Result<DebugConsole, std::io::Error> {
+        
         if let Some(timeout) = timeout {
             let start_time = time::Instant::now();
             while start_time.elapsed() < timeout {
