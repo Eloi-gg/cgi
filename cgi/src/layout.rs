@@ -208,7 +208,6 @@ impl RenderedLayout {
         self.layers.iter_mut().flat_map(|l| l.iter_mut())
     }
     
-    // For testing purpose only
     pub(crate) fn notify_size_change(&mut self) -> &Self {
         let mut actions = crate::ActionList::new();
 

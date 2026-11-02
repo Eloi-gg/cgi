@@ -201,36 +201,38 @@ impl Application {
         Ok(())
     }
 
-    fn handle_widget_actions(&mut self, action: Action) {
-        let widget = if let Some(widget) = &self.selected_widget {
-            widget
+    fn handle_widget_actions(&mut self, actions: ActionList) {
+        // redrawing
+        if actions.redraw_all {
+            self.global_action.redraw_all = true;
         } else {
-            return;
-        };
-        let placement = self.rendered_layout.get_widget_coords(widget, false);
-        match action {
-            Action::RedrawWidget => {
+            for widget in actions.redraw_list {
+                let placement = self.rendered_layout.get_widget_coords(&widget, false);
                 self.rendered_layout.render_single_widget_to_output(
-                    widget,
+                    &widget,
                     &placement,
                     &mut self.output,
                 );
             }
-            Action::MoveCursor(cursor_move) => {
-                let mv_cmd = if let crate::CursorMove::ToRelativeToWidget(x, y) = cursor_move {
-                    let (x, y) = (x + placement.x as u16, y + placement.y as u16);
-                    crate::CursorMove::ToAbsolute(x, y)
-                } else {
-                    cursor_move
-                };
-                self.global_action.cursor_move = Some(mv_cmd);
-            }
-            Action::RedrawAll => {
-                self.global_action.redraw_all = true;
-            }
-            _ => {
-                println!("Unsupported Action: {:?}", action);
-            }
+        }
+
+        if let Some((cursor_move, hdl)) = actions.cursor_move {
+            let placement = self.rendered_layout.get_widget_coords(&hdl, false);
+            let mv_cmd = if let crate::CursorMove::ToRelativeToWidget(x, y) = cursor_move {
+                let (x, y) = (x + placement.x as u16, y + placement.y as u16);
+                crate::CursorMove::ToAbsolute(x, y)
+            } else {
+                cursor_move
+            };
+            self.global_action.cursor_move = Some(mv_cmd);
+        }
+
+        if !actions.custom_messages.is_empty() {
+            todo!("custom messages not yet supported")
+        }
+
+        if !actions.visibility_change.is_empty() {
+            todo!("visibility changes not yet supported")
         }
     }
 
@@ -251,8 +253,6 @@ impl Application {
         while let Ok(msg) = self.connection_rx.try_recv() {
             crate::log::log(&format!("CGI core: received message {:?}", msg));
             match msg {
-                AppMessage::Action(action) => self.handle_widget_actions(action),
-
                 AppMessage::Command(command) => match command {
                     Command::FocusWidget(widget_hdl) => self.selected_widget = Some(widget_hdl),
                     Command::ShutDown => {
@@ -260,6 +260,15 @@ impl Application {
                         exit(0);
                     }
                 },
+
+                AppMessage::Action(action) => {
+                    let mut action_list = ActionList::new();
+                    if let Some(selected_widget) = &self.selected_widget {
+                        action_list.set_focused_widget(selected_widget.clone());
+                    }
+                    action_list.add(action);
+                    self.handle_widget_actions(action_list);
+                }
             }
         }
     }
@@ -278,7 +287,8 @@ impl Application {
 
         // Initial resize
         self.size_changed(cols, rows);
-
+        self.rendered_layout.notify_size_change();
+        
         // Event loop
         loop {
             if let Ok(has_event) = ct::event::poll(std::time::Duration::from_secs(0)) {
@@ -304,16 +314,14 @@ impl Application {
                     for widget in
                         self.rendered_layout.layers[self.rendered_layout.current_layer].keys()
                     {
+                        actions_list.set_focused_widget(widget.clone());
                         widget
                             .write_displayable()
                             .unwrap()
                             .on_event(event.clone().into(), &mut actions_list);
                     }
-                    for action in actions_list.drain() {
-                        self.handle_widget_actions(action);
-                    }
 
-                    self.handle_global_action(); 
+                    self.handle_widget_actions(actions_list);
                 }
             }
 

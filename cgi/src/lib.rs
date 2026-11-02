@@ -21,6 +21,8 @@ pub use layout::WidgetPlacement;
 pub use rendering::CharContainer;
 pub use widget::{Widget, WidgetBuilder};
 
+use crate::widget::WidgetHdl;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Event {
     Resize(u16, u16),
@@ -36,19 +38,40 @@ pub enum EventType {
 }
 
 #[derive(Debug)]
-pub struct ActionList(Vec<Action>);
+pub struct ActionList {
+    pub(crate) redraw_list: Vec<WidgetHdl>,
+    pub(crate) custom_messages: Vec<u64>,
+    pub(crate) visibility_change: Vec<(WidgetHdl, bool)>,
+    pub(crate) redraw_all: bool,
+    pub(crate) cursor_move: Option<(CursorMove, WidgetHdl)>,
+    pub(crate) focused_widget: Option<WidgetHdl>
+}
 
 impl ActionList {
     pub(crate) fn new() -> Self {
-        Self(Vec::new())
+        Self {
+            redraw_list: Vec::new(),
+            visibility_change: Vec::new(),
+            custom_messages: Vec::new(),
+            redraw_all: false,
+            focused_widget: None,
+            cursor_move: None,
+        }
     }
 
-    fn drain(&mut self) -> Vec<Action> {
-        self.0.drain(..).collect()
+    pub(crate) fn set_focused_widget(&mut self, widget: WidgetHdl) {
+        self.focused_widget = Some(widget)
     }
 
     pub fn add(&mut self, action: Action) {
-        self.0.push(action);
+        let Some(focused_widget) = &self.focused_widget else { return }; 
+        match action {
+            Action::RedrawWidget => self.redraw_list.push(focused_widget.clone()),
+            Action::RedrawAll => self.redraw_all = true,
+            Action::SetVisible(b) => self.visibility_change.push((focused_widget.clone(), b)),
+            Action::MoveCursor(cursor_move) => self.cursor_move = Some((cursor_move, focused_widget.clone())),
+            Action::CustomMessage(msg) => self.custom_messages.push(msg),
+        }
     }
 }
 
@@ -81,29 +104,6 @@ pub enum Action {
     SetVisible(bool),
     MoveCursor(CursorMove),
     CustomMessage(u64),
-}
-
-impl Action {
-    pub fn send_messages_from_raw_bytes(bytes: &[u8]) -> ActionList {
-        let mut r = ActionList(vec![]);
-
-        let it = bytes.iter().rev();
-        let mut num: u64 = 0;
-        let mut i = 0;
-        for byte in it {
-            num |= (*byte as u64) << (i * 8);
-            i += 1;
-            if i == 8 {
-                r.0.push(Action::CustomMessage(num));
-                num = 0;
-                i = 0;
-            }
-        }
-        if i > 0 {
-            r.0.push(Action::CustomMessage(num));
-        }
-        r
-    }
 }
 
 impl std::fmt::Debug for Command {
