@@ -274,6 +274,7 @@ impl Application {
     }
 
     pub fn run(mut self) {
+        todo!("focus widget action impl")
         // Initial setup
         ct::terminal::enable_raw_mode().expect("Failed to enable raw mode");
 
@@ -288,7 +289,7 @@ impl Application {
         // Initial resize
         self.size_changed(cols, rows);
         self.rendered_layout.notify_size_change();
-        
+
         // Event loop
         loop {
             if let Ok(has_event) = ct::event::poll(std::time::Duration::from_secs(0)) {
@@ -329,8 +330,6 @@ impl Application {
             self.handle_global_action();
 
             std::io::stdout().flush().unwrap(); // KEEP
-            // self.update();
-            // print!(".");
         }
     }
 }

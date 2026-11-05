@@ -26,37 +26,34 @@ use crate::widget::WidgetHdl;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Event {
     Resize(u16, u16),
-    KeyPress(KeyCode), // TODO
-    Custom(),          // TODO
+    KeyPress(KeyCode),
+    WidgetFocused,
+    Custom(), // TODO
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum EventType {
     Resize,
     KeyPress,
+    WidgetFocused,
     Custom,
 }
 
-#[derive(Debug)]
+#[derive(Default)]
 pub struct ActionList {
     pub(crate) redraw_list: Vec<WidgetHdl>,
     pub(crate) custom_messages: Vec<u64>,
     pub(crate) visibility_change: Vec<(WidgetHdl, bool)>,
     pub(crate) redraw_all: bool,
     pub(crate) cursor_move: Option<(CursorMove, WidgetHdl)>,
-    pub(crate) focused_widget: Option<WidgetHdl>
+    pub(crate) focused_widget: Option<WidgetHdl>,
+    pub(crate) cursor_show: Option<bool>,
+    pub(crate) cursor_style: Option<CursorStyle>,
 }
 
 impl ActionList {
     pub(crate) fn new() -> Self {
-        Self {
-            redraw_list: Vec::new(),
-            visibility_change: Vec::new(),
-            custom_messages: Vec::new(),
-            redraw_all: false,
-            focused_widget: None,
-            cursor_move: None,
-        }
+        Self::default()
     }
 
     pub(crate) fn set_focused_widget(&mut self, widget: WidgetHdl) {
@@ -64,13 +61,20 @@ impl ActionList {
     }
 
     pub fn add(&mut self, action: Action) {
-        let Some(focused_widget) = &self.focused_widget else { return }; 
+        let Some(focused_widget) = &self.focused_widget else {
+            return;
+        };
         match action {
             Action::RedrawWidget => self.redraw_list.push(focused_widget.clone()),
             Action::RedrawAll => self.redraw_all = true,
             Action::SetVisible(b) => self.visibility_change.push((focused_widget.clone(), b)),
-            Action::MoveCursor(cursor_move) => self.cursor_move = Some((cursor_move, focused_widget.clone())),
+            Action::MoveCursor(cursor_move) => {
+                self.cursor_move = Some((cursor_move, focused_widget.clone()))
+            }
             Action::CustomMessage(msg) => self.custom_messages.push(msg),
+            Action::SetCursorStyle(set_cursor_style) => self.cursor_style = Some(set_cursor_style),
+            Action::ShowCursor => self.cursor_show = Some(true),
+            Action::HideCursor => self.cursor_show = Some(false),
         }
     }
 }
@@ -86,6 +90,8 @@ pub enum CursorMove {
     ToRelativeToWidget(u16, u16),
 }
 
+pub use crossterm::cursor::SetCursorStyle as CursorStyle;
+
 pub enum Command {
     FocusWidget(widget::WidgetHdl),
     ShutDown,
@@ -97,13 +103,31 @@ pub enum AppMessage {
     Action(Action),
 }
 
-#[derive(Debug)]
 pub enum Action {
     RedrawWidget,
     RedrawAll,
     SetVisible(bool),
-    MoveCursor(CursorMove),
     CustomMessage(u64),
+    MoveCursor(CursorMove),
+    SetCursorStyle(CursorStyle),
+    ShowCursor,
+    HideCursor,
+}
+
+use std::fmt::Display;
+impl std::fmt::Debug for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RedrawWidget => write!(f, "RedrawWidget"),
+            Self::RedrawAll => write!(f, "RedrawAll"),
+            Self::SetVisible(arg0) => f.debug_tuple("SetVisible").field(arg0).finish(),
+            Self::CustomMessage(arg0) => f.debug_tuple("CustomMessage").field(arg0).finish(),
+            Self::MoveCursor(arg0) => f.debug_tuple("MoveCursor").field(arg0).finish(),
+            Self::SetCursorStyle(arg0) => arg0.fmt(f),
+            Self::ShowCursor => write!(f, "ShowCursor"),
+            Self::HideCursor => write!(f, "HideCursor"),
+        }
+    }
 }
 
 impl std::fmt::Debug for Command {
@@ -124,6 +148,7 @@ impl From<Event> for EventType {
             Event::Resize(_, _) => EventType::Resize,
             Event::KeyPress(_) => EventType::KeyPress,
             Event::Custom() => EventType::Custom,
+            Event::WidgetFocused => todo!(),
         }
     }
 }

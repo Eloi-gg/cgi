@@ -908,7 +908,7 @@ pub mod text {
 pub mod table {
     use crate::text_formatting::Format;
 
-use super::*;
+    use super::*;
     pub trait Cell: Send + Sync + Clone {
         fn get_width(&self) -> u16;
         fn get_chars(&self, buffer: &mut Vec<char>);
@@ -1137,7 +1137,7 @@ use super::*;
     pub struct StyleSet {
         even: CombinedFormat,
         odd: CombinedFormat,
-        titles: CombinedFormat
+        titles: CombinedFormat,
     }
 
     impl StyleSet {
@@ -1173,7 +1173,7 @@ use super::*;
         computed_column_widths: Vec<u16>,
         max_rows: u16,
         current_num_rows: u16,
-        style_set: StyleSet
+        style_set: StyleSet,
     }
 
     /// Simply calls set_cell for every argument you give. \
@@ -1318,7 +1318,7 @@ use super::*;
                 computed_column_widths: vec![],
                 current_num_rows: 0,
                 max_rows: 0,
-                style_set: StyleSet::new()
+                style_set: StyleSet::new(),
             }
         }
 
@@ -1920,7 +1920,9 @@ mod factory_widgets_tests {
         for step in 0..=16 {
             let amt = 1.0 - increment * (step as f32);
             progress_bar.edit().set_amt(amt);
-            layout.notify_size_change().full_render_to_output(&mut output);
+            layout
+                .notify_size_change()
+                .full_render_to_output(&mut output);
             let rendered_text = output.to_string();
             eprintln!(
                 "Step {}: amt={}, rendered={:?}, expected={:?}",
@@ -2158,7 +2160,10 @@ mod factory_widgets_tests {
         }
 
         layout.connect_and_add_widgets(&widgets, placements.as_mut_slice());
-        layout.render(17, 7).notify_size_change().full_render_to_output(&mut output);
+        layout
+            .render(17, 7)
+            .notify_size_change()
+            .full_render_to_output(&mut output);
         let rendered_text = output.to_string();
 
         println!("{}", rendered_text);
