@@ -845,13 +845,25 @@ pub mod text {
         fn on_event(&mut self, event: crate::Event, actions: &mut crate::ActionList) {
             let mut should_update = false;
 
-            if let crate::Event::Resize(..) = event {
-                self.text_box.on_event(event, actions);
-                should_update = true;
-            }
+            match event {
+                crate::Event::Resize(..) => {
+                    self.text_box.on_event(event, actions);
+                    should_update = true;
+                }
 
-            if let crate::Event::KeyPress(code) = event {
-                match code {
+                crate::Event::WidgetFocused => {
+                    actions.add(crate::Action::ShowCursor);
+                    actions.add(crate::Action::SetCursorStyle(
+                        crate::CursorStyle::BlinkingUnderScore,
+                    ));
+                }
+                crate::Event::FocusLost => {
+                    actions.add(crate::Action::HideCursor);
+                    actions.add(crate::Action::SetCursorStyle(
+                        crate::CursorStyle::SteadyBlock,
+                    ));
+                }
+                crate::Event::KeyPress(code) => match code {
                     crate::KeyCode::Backspace => {
                         self.remove_char_before_cursor();
                         should_update = true;
@@ -885,7 +897,8 @@ pub mod text {
                         should_update = true;
                     }
                     _ => {}
-                }
+                },
+                _ => (),
             }
 
             if self.listener.is_listening_for(event.into()) {

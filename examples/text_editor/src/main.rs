@@ -68,64 +68,10 @@ fn on_event(
     }
 }
 
-fn build_app() -> cgi::Application {
-    use cgi::factory_widgets::{Listener, progression::*, text::*};
-
-    let (mut app, _) = cgi::Application::new();
-
-    let title = TextBox::new(
-        "Text editor",
-        Listener::empty(),
-        factory_widgets::text::TextAlign::Center,
-    )
-    .widget_builder()
-    .with_outline(symbols::OutlineStyle::Double)
-    .build();
-
-    let main_panel = TextBox::new(
-        "Type your text here...",
-        Listener::new(on_event).listening_for(EventType::KeyPress),
-        TextAlign::Left,
-    )
-    .widget_builder()
-    .with_outline(symbols::OutlineStyle::Rounded)
-    .build();
-    let progress_bar = ProgressBar::new(
-        ProgressBarType::HorizontalNineLevels,
-        0.0,
-        Listener::empty(),
-    )
-    .widget_builder()
-    .with_outline(symbols::OutlineStyle::Normal)
-    .with_title("Progress")
-    .build();
-
-    let title_placement = WidgetPlacement::fullscreen()
-        .with_height(3)
-        .expand_or_shrink(-1, 0);
-    let main_panel_placement = title_placement.get_below().shift_bottom_right(0, -3);
-    let progress_bar_placement =
-        WidgetPlacement::new_with_size(Absolute(0), Hybrid(-3, 1.0), 1.0.into(), 1.0.into());
-
-    let layout = cgi::Layout::new()
-        .with_widget(&title, title_placement)
-        .with_widget(&main_panel, main_panel_placement)
-        .with_widget(
-            &progress_bar,
-            progress_bar_placement.expand_or_shrink(-1, 0),
-        );
-
-    app.set_layout_behaviour(|(..)| 0);
-    app.add_layout(0, layout);
-    let _ = app.spawn_debug_window();
-
-    app
-}
-
 fn build_app_w_text_input() -> cgi::Application {
     use cgi::factory_widgets::{Listener, progression::*, text::*};
 
-    let (mut app, _) = cgi::Application::new();
+    let (mut app, mut app_connection) = cgi::Application::new();
 
     let title = TextBox::new(
         "Text editor",
@@ -168,7 +114,7 @@ fn build_app_w_text_input() -> cgi::Application {
     app.set_layout_behaviour(|(..)| 0);
     app.add_layout(0, layout);
     let _ = app.spawn_debug_window();
-
+    app_connection.send_command(Command::FocusWidget(main_panel.as_hdl()));
     app
 }
 

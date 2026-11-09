@@ -84,6 +84,9 @@ impl AppConnection {
 struct GlobalAction {
     redraw_all: bool,
     cursor_move: Option<crate::CursorMove>,
+    change_focus: Option<WidgetHdl>,
+    cursor_show: Option<bool>,
+    cursor_style: Option<crossterm::cursor::SetCursorStyle>,
 }
 
 impl Application {
@@ -105,6 +108,9 @@ impl Application {
                 global_action: GlobalAction {
                     redraw_all: false,
                     cursor_move: None,
+                    change_focus: None,
+                    cursor_show: None,
+                    cursor_style: None,
                 },
                 selected_widget: None,
                 event_sender: None,
@@ -227,6 +233,9 @@ impl Application {
             self.global_action.cursor_move = Some(mv_cmd);
         }
 
+        self.global_action.cursor_show = actions.cursor_show;
+        self.global_action.cursor_style = actions.cursor_style;
+
         if !actions.custom_messages.is_empty() {
             todo!("custom messages not yet supported")
         }
@@ -237,15 +246,50 @@ impl Application {
     }
 
     fn handle_global_action(&mut self) {
-        if self.global_action.redraw_all == true {
+        if self.global_action.redraw_all {
             crate::log::log("CGI redraw all");
             self.rendered_layout.full_render_to_output(&mut self.output);
             self.global_action.redraw_all = false;
         }
+
         if let Some(cursor_move) = self.global_action.cursor_move {
             self.move_cursor(cursor_move);
             self.global_action.cursor_move = None;
             crate::log::log(&format!("CURSOR MOVE {:?}", cursor_move));
+        }
+
+        if let Some(new_focus) = &self.global_action.change_focus {
+            let mut actions_list = ActionList::new();
+            crate::log::log("Focus changed");
+            new_focus
+                .write_displayable()
+                .unwrap()
+                .on_event(crate::Event::WidgetFocused, &mut actions_list);
+
+            if let Some(widget_hdl) = &mut self.selected_widget {
+                widget_hdl
+                    .write_displayable()
+                    .unwrap()
+                    .on_event(crate::Event::FocusLost, &mut actions_list);
+            }
+            self.handle_widget_actions(actions_list);
+        }
+        if self.global_action.change_focus.is_some() {
+            self.selected_widget = self.global_action.change_focus.take();
+        }
+
+        if let Some(show) = self.global_action.cursor_show.take() {
+            crate::log::log("Cursor visibility changed");
+            if show {
+                let _ = ct::execute!(std::io::stdout(), ct::cursor::Show);
+            } else {
+                let _ = ct::execute!(std::io::stdout(), ct::cursor::Hide);
+            }
+        }
+
+        if let Some(style) = self.global_action.cursor_style.take() {
+            crate::log::log("Cursor style changed");
+            let _ = ct::execute!(std::io::stdout(), style);
         }
     }
 
@@ -254,7 +298,9 @@ impl Application {
             crate::log::log(&format!("CGI core: received message {:?}", msg));
             match msg {
                 AppMessage::Command(command) => match command {
-                    Command::FocusWidget(widget_hdl) => self.selected_widget = Some(widget_hdl),
+                    Command::FocusWidget(widget_hdl) => {
+                        self.global_action.change_focus = Some(widget_hdl);
+                    }
                     Command::ShutDown => {
                         crate::log::log("CGI core: shutting down");
                         exit(0);
@@ -273,8 +319,19 @@ impl Application {
         }
     }
 
+    fn dispatch_event<E: Clone + Into<crate::Event>>(&mut self, event: E) {
+        let mut actions_list = ActionList::new();
+        for widget in self.rendered_layout.layers[self.rendered_layout.current_layer].keys() {
+            actions_list.set_focused_widget(widget.clone());
+            widget
+                .write_displayable()
+                .unwrap()
+                .on_event(event.clone().into(), &mut actions_list);
+        }
+        self.handle_widget_actions(actions_list);
+    }
+
     pub fn run(mut self) {
-        todo!("focus widget action impl")
         // Initial setup
         ct::terminal::enable_raw_mode().expect("Failed to enable raw mode");
 
@@ -310,19 +367,8 @@ impl Application {
                         event_sender.send_event(event.clone());
                     }
 
-                    let mut actions_list = ActionList::new();
                     crate::log::log(&format!("CGI core: handling event {:?}", event));
-                    for widget in
-                        self.rendered_layout.layers[self.rendered_layout.current_layer].keys()
-                    {
-                        actions_list.set_focused_widget(widget.clone());
-                        widget
-                            .write_displayable()
-                            .unwrap()
-                            .on_event(event.clone().into(), &mut actions_list);
-                    }
-
-                    self.handle_widget_actions(actions_list);
+                    self.dispatch_event(event);
                 }
             }
 

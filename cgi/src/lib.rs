@@ -28,6 +28,7 @@ pub enum Event {
     Resize(u16, u16),
     KeyPress(KeyCode),
     WidgetFocused,
+    FocusLost,
     Custom(), // TODO
 }
 
@@ -37,6 +38,7 @@ pub enum EventType {
     KeyPress,
     WidgetFocused,
     Custom,
+    FocusChange,
 }
 
 #[derive(Default)]
@@ -61,21 +63,27 @@ impl ActionList {
     }
 
     pub fn add(&mut self, action: Action) {
-        let Some(focused_widget) = &self.focused_widget else {
-            return;
-        };
-        match action {
-            Action::RedrawWidget => self.redraw_list.push(focused_widget.clone()),
-            Action::RedrawAll => self.redraw_all = true,
-            Action::SetVisible(b) => self.visibility_change.push((focused_widget.clone(), b)),
-            Action::MoveCursor(cursor_move) => {
-                self.cursor_move = Some((cursor_move, focused_widget.clone()))
+        if let Some(focused_widget) = &self.focused_widget {
+            match &action {
+                Action::RedrawWidget => self.redraw_list.push(focused_widget.clone()),
+                Action::MoveCursor(cursor_move) => {
+                    self.cursor_move = Some((*cursor_move, focused_widget.clone()))
+                }
+                Action::SetVisible(b) => self.visibility_change.push((focused_widget.clone(), *b)),
+                _ => (),
             }
-            Action::CustomMessage(msg) => self.custom_messages.push(msg),
-            Action::SetCursorStyle(set_cursor_style) => self.cursor_style = Some(set_cursor_style),
-            Action::ShowCursor => self.cursor_show = Some(true),
-            Action::HideCursor => self.cursor_show = Some(false),
-        }
+        } else {
+            match action {
+                Action::RedrawAll => self.redraw_all = true,
+                Action::CustomMessage(msg) => self.custom_messages.push(msg),
+                Action::SetCursorStyle(set_cursor_style) => {
+                    self.cursor_style = Some(set_cursor_style)
+                }
+                Action::ShowCursor => self.cursor_show = Some(true),
+                Action::HideCursor => self.cursor_show = Some(false),
+                _ => (),
+            }
+        };
     }
 }
 
@@ -148,6 +156,7 @@ impl From<Event> for EventType {
             Event::Resize(_, _) => EventType::Resize,
             Event::KeyPress(_) => EventType::KeyPress,
             Event::Custom() => EventType::Custom,
+            Event::FocusLost | Event::WidgetFocused => EventType::FocusChange,
             Event::WidgetFocused => todo!(),
         }
     }
