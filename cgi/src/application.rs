@@ -223,7 +223,7 @@ impl Application {
         }
 
         if let Some((cursor_move, hdl)) = actions.cursor_move {
-            let placement = self.rendered_layout.get_widget_coords(&hdl, false);
+            let placement = self.rendered_layout.get_widget_coords(&hdl, true);
             let mv_cmd = if let crate::CursorMove::ToRelativeToWidget(x, y) = cursor_move {
                 let (x, y) = (x + placement.x as u16, y + placement.y as u16);
                 crate::CursorMove::ToAbsolute(x, y)
@@ -383,6 +383,10 @@ impl Application {
 impl Drop for Application {
     fn drop(&mut self) {
         let _ = ct::terminal::disable_raw_mode();
-        let _ = ct::execute!(std::io::stdout(), ct::terminal::LeaveAlternateScreen);
+        let _ = ct::execute!(
+            std::io::stdout(),
+            ct::terminal::LeaveAlternateScreen,
+            ct::cursor::SetCursorStyle::SteadyBlock
+        );
     }
 }
