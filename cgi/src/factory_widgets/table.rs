@@ -6,7 +6,7 @@ use crate::{
 use super::*;
 pub trait Cell: Send + Sync + Clone {
     fn get_width(&self) -> u16;
-    fn get_chars(&self, buffer: &mut Vec<char>);
+    fn get_chars(&self, buffer: &mut Vec<char>, available_width: u16);
 }
 
 pub trait ColumnType: Send + Sync + Clone {
@@ -187,7 +187,7 @@ impl Cell for StandardCell {
         w as u16
     }
 
-    fn get_chars(&self, buffer: &mut Vec<char>) {
+    fn get_chars(&self, buffer: &mut Vec<char>, available_width: u16) {
         let str = match &self.0 {
             StandardCellEnum::Text { text } => text,
             StandardCellEnum::Integer { as_str, .. } => as_str,
@@ -199,7 +199,23 @@ impl Cell for StandardCell {
                     "false"
                 }
             }
-            StandardCellEnum::ProgressBar { amt } => "TODO",
+            StandardCellEnum::ProgressBar { amt } => {
+                let scaled = amt.clamp(0.0, 1.0) * available_width as f32;
+                let filled = scaled.floor() as usize;
+                let partial_fill = scaled.fract();
+                let set = crate::symbols::progress_bar::block::NINE_LEVELS;
+                for i in 0..available_width {
+                    let ch = if (i as usize) < filled {
+                        set.full
+                    } else if (i as usize) == filled && partial_fill > 0.0 {
+                        set.get_level(partial_fill)
+                    } else {
+                        ' '
+                    };
+                    buffer.push(ch);                    
+                }
+                return;
+            },
         };
 
         buffer.extend(str.chars());
@@ -371,7 +387,8 @@ impl<T: ColumnType> Displayable for Table<T> {
             char_container.set_format(fmt);
             //TODO: all the formatting stuff
             for col_idx in 0..self.columns.len() {
-                row[col_idx].get_chars(&mut buffer);
+                let col_width = self.computed_column_widths[col_idx];
+                row[col_idx].get_chars(&mut buffer, col_width);
                 rows_buffer.extend(
                     buffer
                         .iter()
@@ -379,7 +396,7 @@ impl<T: ColumnType> Displayable for Table<T> {
                         .map(|(i, e)| (i as u16 + column_positions[col_idx], row_idx + 1, *e)),
                 );
                 // Add whitespaces..
-                for x in buffer.len()..(self.computed_column_widths[col_idx] as _) {
+                for x in buffer.len()..(col_width as _) {
                     rows_buffer.push((x as u16 + column_positions[col_idx], row_idx + 1, ' '));
                 }
                 char_container.add_owned(rows_buffer.clone());

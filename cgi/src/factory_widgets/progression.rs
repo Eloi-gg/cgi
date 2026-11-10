@@ -9,6 +9,7 @@ pub enum ProgressBarType {
     VerticalThreeLevels,
 }
 
+#[derive(Clone)]
 pub struct ProgressBar {
     bar_type: ProgressBarType,
     amt: f32,
